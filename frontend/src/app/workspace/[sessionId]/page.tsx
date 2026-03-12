@@ -50,6 +50,128 @@ const QUICK_SUGGESTIONS: Record<string, string[]> = {
   engineering_lead: ["Check service latency", "Recent deployments", "Error rate trends"],
 };
 
+const AGENT_INTROS: Record<string, { greeting: string; data_access: { name: string; desc: string }[]; capabilities: string[] }> = {
+  analyst: {
+    greeting: "Hello! I'm the Data Analyst on the team. I work with product analytics to help you understand what's happening in the numbers.",
+    data_access: [
+      { name: "orders.csv", desc: "All order transactions with status, amounts, platform" },
+      { name: "payments.csv", desc: "Payment attempts with method, provider, processing time, errors" },
+      { name: "sessions_events.csv", desc: "User session events — builds checkout funnels" },
+      { name: "users.csv", desc: "User profiles with platform, region, user type" },
+    ],
+    capabilities: [
+      "Trend analysis — orders, revenue, AOV, conversion over time",
+      "Funnel deep-dives — checkout step-by-step drop-off",
+      "Segment breakdowns — by platform, user type, payment method, region",
+      "Period comparisons — before vs. after a specific date",
+    ],
+  },
+  ux_researcher: {
+    greeting: "Hi! I'm the UX Researcher. I focus on how users are experiencing the product — through their words, tickets, and usability data.",
+    data_access: [
+      { name: "reviews.csv", desc: "User reviews with ratings, text, platform" },
+      { name: "support_tickets.csv", desc: "Support tickets with category, priority, resolution time" },
+      { name: "usability_study.md", desc: "Moderated usability study report (n=20)" },
+      { name: "ux_changelog.csv", desc: "Recent UI/UX changes — features, bugfixes, A/B tests" },
+    ],
+    capabilities: [
+      "Review search — filter by keyword, platform, rating",
+      "Ticket pattern analysis — by category, subcategory, priority",
+      "Usability study findings — task completion, time-on-task",
+      "UX change history — what shipped recently and where",
+    ],
+  },
+  engineering_lead: {
+    greeting: "Hey! I'm the Engineering Lead. I have visibility into system health, deployments, and error patterns.",
+    data_access: [
+      { name: "deployments.csv", desc: "Deployment history with service, author, rollback status" },
+      { name: "service_metrics.csv", desc: "Daily latency (p50/p95/p99) and error rates per service" },
+      { name: "system_architecture.md", desc: "Service topology and dependency diagram" },
+      { name: "payment_errors_summary.csv", desc: "Payment error patterns by code, platform, date" },
+    ],
+    capabilities: [
+      "Deployment history — what shipped, when, by whom",
+      "Service health — latency percentiles and error rates",
+      "Error pattern analysis — by error code, platform, date",
+      "Architecture review — service dependencies and topology",
+    ],
+  },
+};
+
+const DATA_DICTIONARY = {
+  analytics: {
+    label: "Analytics",
+    icon: "monitoring",
+    datasets: [
+      { name: "orders.csv", description: "Order transactions", fields: [
+        { name: "order_id", type: "string", description: "Unique order identifier" },
+        { name: "user_id", type: "string", description: "User who placed the order" },
+        { name: "order_status", type: "enum", description: "completed / failed / cancelled" },
+        { name: "total_amount", type: "float", description: "Order total in USD" },
+        { name: "platform", type: "enum", description: "ios / android / web" },
+        { name: "created_at", type: "datetime", description: "Order timestamp" },
+      ]},
+      { name: "payments.csv", description: "Payment attempts", fields: [
+        { name: "payment_id", type: "string", description: "Unique payment identifier" },
+        { name: "method", type: "enum", description: "credit_card / apple_pay / google_pay / paypal" },
+        { name: "provider", type: "enum", description: "paystream_v2 / paystream_v3" },
+        { name: "status", type: "enum", description: "success / failed / timeout" },
+        { name: "processing_time_ms", type: "int", description: "Payment processing duration" },
+        { name: "error_code", type: "string", description: "Error code if failed" },
+      ]},
+      { name: "sessions_events.csv", description: "User session events (funnel)", fields: [
+        { name: "event_type", type: "enum", description: "app_open → restaurant_view → add_to_cart → checkout_start → payment_attempt → order_complete" },
+        { name: "platform", type: "enum", description: "ios / android / web" },
+        { name: "app_version", type: "string", description: "App version at time of event" },
+      ]},
+    ],
+  },
+  user_signals: {
+    label: "User Signals",
+    icon: "person_search",
+    datasets: [
+      { name: "reviews.csv", description: "User reviews", fields: [
+        { name: "rating", type: "int", description: "1-5 star rating" },
+        { name: "text", type: "string", description: "Review text content" },
+        { name: "platform", type: "enum", description: "ios / android / web" },
+      ]},
+      { name: "support_tickets.csv", description: "Support tickets", fields: [
+        { name: "category", type: "string", description: "Ticket category (payment, delivery, etc.)" },
+        { name: "subcategory", type: "string", description: "Specific issue type" },
+        { name: "priority", type: "enum", description: "low / medium / high / critical" },
+        { name: "status", type: "enum", description: "open / in_progress / resolved" },
+      ]},
+      { name: "usability_study.md", description: "Moderated usability research report", fields: [] },
+      { name: "ux_changelog.csv", description: "Recent UX changes", fields: [
+        { name: "change_type", type: "enum", description: "feature / bugfix / ab_test" },
+        { name: "affected_area", type: "string", description: "Area of the product affected" },
+      ]},
+    ],
+  },
+  observability: {
+    label: "Observability",
+    icon: "terminal",
+    datasets: [
+      { name: "deployments.csv", description: "Deployment history", fields: [
+        { name: "service", type: "string", description: "Service that was deployed" },
+        { name: "description", type: "string", description: "What was deployed" },
+        { name: "rollback_available", type: "bool", description: "Whether rollback is possible" },
+      ]},
+      { name: "service_metrics.csv", description: "Service health metrics", fields: [
+        { name: "service", type: "string", description: "Service name" },
+        { name: "p50_ms / p95_ms / p99_ms", type: "float", description: "Latency percentiles" },
+        { name: "error_rate_pct", type: "float", description: "Error rate percentage" },
+      ]},
+      { name: "payment_errors_summary.csv", description: "Payment error patterns", fields: [
+        { name: "error_code", type: "string", description: "Error code (e.g., GATEWAY_TIMEOUT)" },
+        { name: "count", type: "int", description: "Number of occurrences" },
+        { name: "platform", type: "enum", description: "ios / android / web" },
+      ]},
+      { name: "system_architecture.md", description: "Service topology documentation", fields: [] },
+    ],
+  },
+};
+
 interface ChatMessage {
   role: "user" | "agent";
   agent?: string;
@@ -272,6 +394,9 @@ export default function WorkspacePage() {
   const [isQuerying, setIsQuerying] = useState(false);
   const [status, setStatus] = useState<SessionStatus | null>(null);
   const [timeLeft, setTimeLeft] = useState("30:00");
+  const [dictOpen, setDictOpen] = useState(false);
+  const [expandedDomains, setExpandedDomains] = useState<Set<string>>(new Set());
+  const [expandedDatasets, setExpandedDatasets] = useState<Set<string>>(new Set());
   const chatEndRef = useRef<HTMLDivElement>(null);
   const dashEndRef = useRef<HTMLDivElement>(null);
 
@@ -429,17 +554,50 @@ export default function WorkspacePage() {
                     </div>
                     {isSelected && <div className="ml-auto size-1.5 bg-emerald-400 rounded-full animate-pulse" />}
                   </div>
-                  {isSelected && (
-                    <div className="mt-2.5 flex flex-wrap gap-1">
-                      {agent.skills.map((skill) => (
-                        <span key={skill} className="text-[9px] px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-800/80 text-slate-500 dark:text-slate-400 font-medium">{skill}</span>
-                      ))}
-                    </div>
-                  )}
                 </button>
               );
             })}
           </div>
+
+          {/* ── Agent Intro Card ── */}
+          {(() => {
+            const intro = AGENT_INTROS[selectedAgent];
+            const agentInfo = AGENTS.find((a) => a.id === selectedAgent);
+            const accentBorder: Record<string, string> = { blue: "border-sky-400/50", purple: "border-violet-400/50", amber: "border-amber-400/50" };
+            const accentBg: Record<string, string> = { blue: "bg-sky-500/5", purple: "bg-violet-500/5", amber: "bg-amber-500/5" };
+            const accentDot: Record<string, string> = { blue: "bg-sky-400", purple: "bg-violet-400", amber: "bg-amber-400" };
+            if (!intro || !agentInfo) return null;
+            return (
+              <div className={`mx-2 mb-2 p-3 rounded-lg border ${accentBorder[agentInfo.color]} ${accentBg[agentInfo.color]} transition-all`}>
+                <p className="text-[11px] text-slate-600 dark:text-slate-400 leading-relaxed mb-3">{intro.greeting}</p>
+                <div className="mb-2.5">
+                  <p className="text-[9px] uppercase tracking-widest text-slate-500 font-bold mb-1.5">Data Access</p>
+                  <div className="space-y-1">
+                    {intro.data_access.map((d) => (
+                      <div key={d.name} className="flex items-start gap-1.5">
+                        <span className="material-symbols-outlined text-[10px] text-slate-500 mt-0.5">dataset</span>
+                        <div>
+                          <span className="text-[10px] font-mono font-semibold text-slate-700 dark:text-slate-300">{d.name}</span>
+                          <span className="text-[9px] text-slate-500 ml-1">— {d.desc}</span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+                <div>
+                  <p className="text-[9px] uppercase tracking-widest text-slate-500 font-bold mb-1.5">I can help with</p>
+                  <div className="space-y-0.5">
+                    {intro.capabilities.map((c) => (
+                      <div key={c} className="flex items-center gap-1.5">
+                        <div className={`size-1 rounded-full ${accentDot[agentInfo.color]} shrink-0`} />
+                        <span className="text-[10px] text-slate-600 dark:text-slate-400">{c}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            );
+          })()}
 
           {/* Session Stats */}
           <div className="mt-auto border-t border-slate-200 dark:border-slate-800">
@@ -575,8 +733,74 @@ export default function WorkspacePage() {
           </div>
 
           <div className="flex-1 overflow-y-auto px-4 py-3">
+            {/* ── Data Dictionary ── */}
+            <div className="mb-3">
+              <button
+                onClick={() => setDictOpen((p) => !p)}
+                className="w-full flex items-center gap-2 px-3 py-2 rounded-lg bg-slate-50 dark:bg-slate-800/30 border border-slate-200 dark:border-slate-700/50 hover:border-slate-300 dark:hover:border-slate-600 transition-colors text-left"
+              >
+                <span className="material-symbols-outlined text-sm text-slate-500">menu_book</span>
+                <span className="text-[10px] font-bold uppercase tracking-widest text-slate-500 flex-1">Data Dictionary</span>
+                <span className={`material-symbols-outlined text-sm text-slate-400 transition-transform ${dictOpen ? "rotate-180" : ""}`}>expand_more</span>
+              </button>
+              {dictOpen && (
+                <div className="mt-2 space-y-2">
+                  {Object.entries(DATA_DICTIONARY).map(([domainKey, domain]) => {
+                    const domainOpen = expandedDomains.has(domainKey);
+                    return (
+                      <div key={domainKey} className="border border-slate-200 dark:border-slate-700/50 rounded-lg overflow-hidden">
+                        <button
+                          onClick={() => setExpandedDomains((prev) => { const next = new Set(prev); if (next.has(domainKey)) { next.delete(domainKey); } else { next.add(domainKey); } return next; })}
+                          className="w-full flex items-center gap-2 px-3 py-2 bg-slate-50 dark:bg-slate-800/40 hover:bg-slate-100 dark:hover:bg-slate-800/60 transition-colors"
+                        >
+                          <span className="material-symbols-outlined text-sm text-slate-500">{domain.icon}</span>
+                          <span className="text-[11px] font-semibold text-slate-700 dark:text-slate-300 flex-1 text-left">{domain.label}</span>
+                          <span className="text-[9px] text-slate-500">{domain.datasets.length} tables</span>
+                          <span className={`material-symbols-outlined text-xs text-slate-400 transition-transform ${domainOpen ? "rotate-180" : ""}`}>expand_more</span>
+                        </button>
+                        {domainOpen && (
+                          <div className="px-3 pb-2 pt-1 space-y-1.5">
+                            {domain.datasets.map((ds) => {
+                              const dsKey = `${domainKey}:${ds.name}`;
+                              const dsOpen = expandedDatasets.has(dsKey);
+                              return (
+                                <div key={dsKey}>
+                                  <button
+                                    onClick={() => setExpandedDatasets((prev) => { const next = new Set(prev); if (next.has(dsKey)) { next.delete(dsKey); } else { next.add(dsKey); } return next; })}
+                                    className="w-full flex items-center gap-1.5 py-1 text-left hover:bg-slate-50 dark:hover:bg-slate-800/30 rounded px-1 transition-colors"
+                                  >
+                                    <span className={`material-symbols-outlined text-[10px] text-slate-400 transition-transform ${dsOpen ? "rotate-90" : ""}`}>chevron_right</span>
+                                    <span className="text-[10px] font-mono font-semibold text-slate-600 dark:text-slate-400">{ds.name}</span>
+                                    <span className="text-[9px] text-slate-500 ml-1">— {ds.description}</span>
+                                  </button>
+                                  {dsOpen && ds.fields.length > 0 && (
+                                    <div className="ml-5 mt-1 border border-slate-200 dark:border-slate-700/30 rounded overflow-hidden">
+                                      <div className="grid grid-cols-[1fr_auto_2fr] text-[9px] bg-slate-100 dark:bg-slate-800/50 px-2 py-1 font-bold text-slate-500 uppercase tracking-wider">
+                                        <span>Field</span><span className="px-2">Type</span><span>Description</span>
+                                      </div>
+                                      {ds.fields.map((f) => (
+                                        <div key={f.name} className="grid grid-cols-[1fr_auto_2fr] text-[9px] px-2 py-1 border-t border-slate-100 dark:border-slate-800/30">
+                                          <span className="font-mono text-slate-700 dark:text-slate-300">{f.name}</span>
+                                          <span className="px-2 text-slate-500">{f.type}</span>
+                                          <span className="text-slate-500">{f.description}</span>
+                                        </div>
+                                      ))}
+                                    </div>
+                                  )}
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
             {dashCards.length === 0 ? (
-              <div className="flex flex-col items-center justify-center h-full text-center px-6">
+              <div className="flex flex-col items-center justify-center py-12 text-center px-6">
                 <span className="material-symbols-outlined text-4xl text-slate-700 mb-3">monitoring</span>
                 <p className="text-xs text-slate-600 leading-relaxed">
                   Charts will appear here as your teammates analyze data. Ask about trends, funnels, or comparisons.
