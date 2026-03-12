@@ -44,7 +44,7 @@ def start_session(candidate_id: str, scenario_id: str) -> dict[str, Any]:
         "session_id": session_id,
         "scenario_id": scenario_id,
         "problem_statement": scenario["problem_statement"],
-        "available_agents": ["analyst", "ux_researcher", "developer"],
+        "available_agents": ["analyst", "ux_researcher", "engineering_lead"],
         "time_limit_minutes": DEFAULT_TIME_LIMIT,
     }
 

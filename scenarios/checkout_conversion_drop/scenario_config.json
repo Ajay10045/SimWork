@@ -4,13 +4,119 @@
   "difficulty": "medium",
   "industry": "food_delivery",
   "product": "FoodDash",
-  "problem_statement": "Weekly orders have dropped by 18% over the past month. Investigate the issue and propose a recovery plan.",
-  "root_cause": "payment_service_latency",
+  "problem_statement": "Weekly orders have dropped by 18% over the past month. Competitors are maintaining steady volume. Your leadership team needs a data-backed explanation and recovery plan.",
+  "time_limit_minutes": 30,
+  "available_agents": ["analyst", "ux_researcher", "engineering_lead"],
+  "root_cause": "payment_service_latency_after_paystream_v3_migration",
+  "root_cause_detail": "PayStream v3 payment gateway migration on Jan 10 introduced a latency regression in the iOS payment path, causing timeouts and failures that disproportionately affect iOS and Apple Pay users.",
+
+  "data_model": {
+    "tables_directory": "tables/",
+    "agent_data_access": {
+      "analyst": {
+        "tables": ["orders.csv", "payments.csv", "sessions_events.csv", "users.csv"],
+        "access_type": "aggregated_views",
+        "description": "Business metrics, funnels, and segment analysis"
+      },
+      "ux_researcher": {
+        "tables": ["reviews.csv", "support_tickets.csv", "usability_study.md", "ux_changelog.csv"],
+        "access_type": "direct",
+        "description": "User feedback, support tickets, usability research, UX change history"
+      },
+      "engineering_lead": {
+        "tables": ["deployments.csv", "service_metrics.csv", "system_architecture.md", "payment_errors_summary.csv"],
+        "access_type": "direct",
+        "description": "Deployment history, service health metrics, system architecture, error patterns"
+      }
+    }
+  },
+
   "expected_investigation_path": [
-    "orders_trend",
-    "checkout_funnel",
-    "segment_analysis",
-    "payment_service_latency",
-    "user_payment_feedback"
-  ]
+    "orders_trend_analysis",
+    "checkout_funnel_breakdown",
+    "platform_segment_analysis",
+    "deployment_timeline_review",
+    "payment_service_latency_check",
+    "error_pattern_investigation",
+    "user_feedback_validation"
+  ],
+
+  "expected_key_findings": [
+    "Orders declining since Jan 10 while DAU remains stable — users visit but can't complete orders",
+    "Payment step has highest funnel drop-off (93% → ~55% post Jan 10)",
+    "iOS hit 6x worse than Android (-30% vs -5% order change)",
+    "Apple Pay worst affected payment method (~45% success rate)",
+    "PayStream v3 migration deployed Jan 10 correlates exactly with decline start",
+    "Payment service p99 latency spiked from 450ms to 4,500ms (10x)",
+    "Error codes shifted to GATEWAY_TIMEOUT and PAYMENT_PROVIDER_ERROR",
+    "Jan 14 hotfix (timeout increase) briefly helped then regressed",
+    "iOS users explicitly reporting payment hangs and switching to competitors",
+    "Usability study shows task completion dropped from 92% to 54%"
+  ],
+
+  "red_herrings": [
+    {
+      "signal": "Holiday promo Dec 26-31 caused DAU spike",
+      "why_misleading": "Candidate might think 'traffic dropped after promo ended' but the real decline starts Jan 10, not Jan 1"
+    },
+    {
+      "signal": "search_service p99 spike on Jan 8",
+      "why_misleading": "Resolved by Jan 9, doesn't correlate with Jan 10+ decline — it was an index rebuild"
+    },
+    {
+      "signal": "notification_service errors Jan 20-22",
+      "why_misleading": "Unrelated email provider issue, tests if candidate stays focused on payment thread"
+    },
+    {
+      "signal": "EU region -15% decline",
+      "why_misleading": "Partly holiday calendar differences, not solely payment issues — tests multi-factor thinking"
+    },
+    {
+      "signal": "UX changelog shows 'payment confirmation animation' change on Jan 10",
+      "why_misleading": "A UI animation change, not the backend payment migration — tests if candidate distinguishes UI from infra"
+    },
+    {
+      "signal": "Promo code WINTER25 bug in support tickets",
+      "why_misleading": "Normal operational issue unrelated to the order decline"
+    }
+  ],
+
+  "evaluation_rubric": {
+    "root_cause_identification": {
+      "weight": 0.35,
+      "levels": {
+        "excellent": "Identifies PayStream v3 migration as root cause, explains iOS-specific latency regression, links deployment date to metric decline",
+        "good": "Identifies payment service issue and iOS correlation but may not pinpoint the exact deployment",
+        "adequate": "Identifies payment step as problematic but doesn't isolate the technical trigger",
+        "poor": "Blames wrong factor (promo ending, UI changes, general traffic decline)"
+      }
+    },
+    "investigation_methodology": {
+      "weight": 0.25,
+      "levels": {
+        "excellent": "Systematically queries all 3 agents, cross-references findings, avoids red herrings, forms and refines hypotheses",
+        "good": "Queries multiple agents, makes connections between data sources",
+        "adequate": "Uses agents but doesn't effectively cross-reference or gets distracted by red herrings",
+        "poor": "Only queries one agent, doesn't explore multiple data dimensions"
+      }
+    },
+    "solution_quality": {
+      "weight": 0.25,
+      "levels": {
+        "excellent": "Tiered action plan (immediate rollback + short-term fixes + long-term prevention), user recovery plan, monitoring improvements, data-backed impact quantification",
+        "good": "Structured actions including rollback and follow-up improvements",
+        "adequate": "Proposes rollback but lacks depth on prevention or recovery",
+        "poor": "Vague solution without concrete actions"
+      }
+    },
+    "communication": {
+      "weight": 0.15,
+      "levels": {
+        "excellent": "Frames for leadership (revenue impact, competitive risk, timeline), clear stakeholder narrative",
+        "good": "Clear summary with supporting data points",
+        "adequate": "Identifies issue but explanation is disorganized",
+        "poor": "Unclear communication, dumps raw data without synthesis"
+      }
+    }
+  }
 }

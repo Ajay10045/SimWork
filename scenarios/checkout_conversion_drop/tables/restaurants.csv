@@ -1,0 +1,51 @@
+restaurant_id,name,cuisine_type,address,rating,owner_id
+R0001,Bella Italia,italian,"222 Market St, Suite 128",3.5,U02529
+R0002,Trattoria Roma,italian,"100 First St, Suite 59",4.0,U03514
+R0003,Pasta Palace,italian,"300 Third Blvd, Suite 92",3.8,U04960
+R0004,Olive Garden Express,italian,"400 Fourth Dr, Suite 86",3.5,U00250
+R0005,La Dolce Vita,italian,"333 Park Ave, Suite 61",3.9,U04069
+R0006,Dragon Palace,chinese,"500 Fifth Ln, Suite 37",4.7,U01153
+R0007,Golden Wok,chinese,"789 Elm Blvd, Suite 108",3.8,U03989
+R0008,Jade Garden,chinese,"300 Third Blvd, Suite 120",4.7,U00324
+R0009,Lucky Star Chinese,chinese,"321 Pine Dr, Suite 174",4.9,U01414
+R0010,Bamboo Kitchen,chinese,"400 Fourth Dr, Suite 140",3.8,U00918
+R0011,Spice Route,indian,"456 Oak Ave, Suite 113",3.7,U00518
+R0012,Curry House,indian,"400 Fourth Dr, Suite 135",4.7,U04672
+R0013,Taj Mahal Kitchen,indian,"111 Broadway, Suite 79",4.6,U03631
+R0014,Mumbai Bites,indian,"400 Fourth Dr, Suite 192",4.5,U02623
+R0015,Saffron Indian,indian,"400 Fourth Dr, Suite 31",4.7,U00579
+R0016,El Sombrero,mexican,"333 Park Ave, Suite 192",4.8,U02599
+R0017,Taco Fiesta,mexican,"222 Market St, Suite 63",4.8,U04080
+R0018,Casa de Burrito,mexican,"321 Pine Dr, Suite 19",4.7,U00719
+R0019,La Cantina,mexican,"400 Fourth Dr, Suite 53",3.9,U01955
+R0020,Aztec Grill,mexican,"456 Oak Ave, Suite 5",4.9,U04384
+R0021,Liberty Diner,american,"789 Elm Blvd, Suite 62",4.2,U00442
+R0022,Eagle Grill,american,"200 Second Ave, Suite 197",4.6,U02739
+R0023,Main Street Eats,american,"555 River Way, Suite 67",4.6,U00216
+R0024,Classic American,american,"400 Fourth Dr, Suite 137",3.5,U00783
+R0025,Blue Plate Special,american,"123 Main St, Suite 63",4.2,U03421
+R0026,Thai Orchid,thai,"111 Broadway, Suite 184",3.9,U00760
+R0027,Bangkok Kitchen,thai,"500 Fifth Ln, Suite 12",4.4,U01057
+R0028,Pad Thai Express,thai,"789 Elm Blvd, Suite 78",3.6,U00621
+R0029,Lotus Thai,thai,"123 Main St, Suite 140",4.5,U00715
+R0030,Siam Garden,thai,"789 Elm Blvd, Suite 133",4.1,U02145
+R0031,Sakura Kitchen,japanese,"456 Oak Ave, Suite 109",4.9,U04507
+R0032,Tokyo Ramen House,japanese,"333 Park Ave, Suite 165",4.2,U01570
+R0033,Zen Japanese,japanese,"456 Oak Ave, Suite 73",3.8,U04653
+R0034,Samurai Grill,japanese,"333 Park Ave, Suite 3",4.3,U01718
+R0035,Nippon Bento,japanese,"123 Main St, Suite 72",4.4,U01538
+R0036,Pizza Planet,pizza,"100 First St, Suite 127",4.4,U02096
+R0037,Slice of Heaven,pizza,"321 Pine Dr, Suite 79",3.8,U02503
+R0038,Napoli Pizza,pizza,"123 Main St, Suite 106",3.7,U02960
+R0039,The Pizza Box,pizza,"123 Main St, Suite 6",3.6,U02411
+R0040,Crust & Co,pizza,"123 Main St, Suite 17",4.7,U00099
+R0041,Burger Barn,burgers,"456 Oak Ave, Suite 52",4.4,U01000
+R0042,The Patty Shack,burgers,"111 Broadway, Suite 86",3.8,U03730
+R0043,Flame Grill Burgers,burgers,"789 Elm Blvd, Suite 13",4.3,U03870
+R0044,Stack House,burgers,"789 Elm Blvd, Suite 176",4.6,U01048
+R0045,Bun & Done,burgers,"555 River Way, Suite 92",4.5,U03468
+R0046,Sushi Master,sushi,"200 Second Ave, Suite 119",4.6,U01069
+R0047,Rolling Fish,sushi,"333 Park Ave, Suite 97",4.4,U00629
+R0048,Ocean Roll,sushi,"300 Third Blvd, Suite 196",4.5,U04915
+R0049,Fresh Catch Sushi,sushi,"444 Lake Rd, Suite 150",4.7,U04541
+R0050,Blue Fin Sushi,sushi,"444 Lake Rd, Suite 117",4.2,U04024

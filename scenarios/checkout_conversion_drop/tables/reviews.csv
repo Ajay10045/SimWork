@@ -1,0 +1,51 @@
+review_id,user_id,order_id,rating,text,platform,created_at
+REV0011,U03377,ORD002849,3,The new icon design is a bit confusing but otherwise the app works great.,android,2024-12-20 20:00:10
+REV0010,U00149,ORD007494,5,Delivery driver was super friendly. Food was perfect.,android,2024-12-26 05:01:35
+REV0006,U00215,ORD004627,4,Nice variety of cuisines. Ordered Thai food and it was great.,android,2024-12-27 02:00:11
+REV0009,U03295,ORD003827,4,"Ordered for a family dinner, everyone was happy with their meals.",web,2024-12-27 16:01:44
+REV0004,U03404,ORD004859,4,Good selection of restaurants. The app is easy to use.,ios,2024-12-27 19:43:14
+REV0003,U04727,ORD002051,5,Fast delivery and the food was still hot. Excellent service!,ios,2024-12-30 00:51:15
+REV0008,U04996,ORD005619,3,Food was good but the search results seem a bit off sometimes. Hard to find specific dishes.,android,2025-01-02 18:30:53
+REV0012,U01877,ORD006199,4,Solid delivery experience. Will order again.,android,2025-01-04 18:39:51
+REV0005,U00270,ORD008156,5,Best delivery app I've used. Always on time.,android,2025-01-04 20:40:06
+REV0001,U03297,ORD001917,5,Great food delivery! Love how fast it arrived.,ios,2025-01-05 11:35:53
+REV0007,U04032,ORD004276,5,Love the app! The tracking feature is super helpful.,web,2025-01-05 19:17:47
+REV0002,U00441,ORD007093,4,"Really enjoying the new restaurant filters, makes browsing so much easier.",android,2025-01-08 13:27:59
+REV0014,U01750,ORD009790,2,Payment process is really slow now. Waited over a minute for it to process.,ios,2025-01-10 06:49:51
+REV0013,U00862,ORD010707,1,Payment keeps failing on my iPhone. Had to try 3 times before it went through.,ios,2025-01-10 07:42:37
+REV0016,U02001,ORD010023,4,"Ordered dinner, everything worked smoothly. Great burgers!",android,2025-01-10 09:02:25
+REV0015,U00324,ORD009668,1,Can't complete any orders! Payment always times out. Very frustrating.,ios,2025-01-10 18:47:44
+REV0020,U00941,ORD010715,5,Fast delivery as always. Love the real-time tracking.,android,2025-01-12 00:44:18
+REV0019,U01918,ORD009778,2,Payment failed twice but worked on the third try. Please fix this!,ios,2025-01-14 21:43:16
+REV0018,U01836,ORD009421,1,Apple Pay hasn't worked for me in days. Had to use my laptop to order.,ios,2025-01-15 18:03:14
+REV0017,U03077,ORD009288,2,Something is wrong with the payment. It just shows 'Something went wrong' every time.,ios,2025-01-15 23:01:14
+REV0047,U04589,ORD011873,3,Wrong order received. Got someone else's food. Support was helpful though.,android,2025-01-18 13:28:46
+REV0028,U00982,ORD011783,1,"Tried credit card and Apple Pay, neither works. What happened to this app?",ios,2025-01-18 13:43:14
+REV0043,U00818,ORD012467,4,"No issues at all. Placed 3 orders this week, all perfect.",android,2025-01-18 18:51:21
+REV0023,U01413,ORD014866,1,I've switched to UberEats because FoodDash payments never work anymore.,ios,2025-01-18 22:37:42
+REV0036,U03242,ORD011912,2,Sometimes works after 4-5 tries but usually just times out.,ios,2025-01-19 02:33:43
+REV0021,U03996,ORD013690,1,Payment times out every single time. I've given up trying to order.,ios,2025-01-19 06:30:46
+REV0044,U00341,ORD011401,1,My friend recommended this app but I literally cannot complete a single order.,ios,2025-01-19 07:23:51
+REV0031,U03205,ORD012974,1,"Every order attempt fails at checkout. iPhone 15 Pro, latest iOS.",ios,2025-01-19 09:51:37
+REV0048,U02020,ORD011459,1,"Updated the app hoping it would fix payments. Nope, still broken.",ios,2025-01-19 17:21:03
+REV0033,U00860,ORD013118,1,I literally cannot order food anymore. Payment is 100% broken on iOS.,ios,2025-01-20 01:30:56
+REV0027,U01269,ORD014565,1,"Payment fails with some generic error message. No explanation, no help.",ios,2025-01-20 14:14:47
+REV0042,U03346,ORD012926,4,"App works great on my Pixel. Quick checkout, good food.",android,2025-01-21 06:33:24
+REV0034,U02852,ORD012345,1,Switching to a competitor. Two weeks of broken payments is unacceptable.,ios,2025-01-21 10:09:49
+REV0024,U00003,ORD014312,1,Works fine on my husband's Android but my iPhone can't process any payment.,ios,2025-01-21 15:23:49
+REV0045,U01117,ORD013695,1,Payment keeps showing gateway timeout. What does that even mean?,ios,2025-01-23 08:50:23
+REV0029,U03962,ORD014237,2,Payment takes forever and then fails. Wasted 20 minutes trying to order dinner.,ios,2025-01-23 14:00:31
+REV0035,U03807,ORD014389,1,Asked my coworkers - everyone with an iPhone has this payment issue.,ios,2025-01-24 02:20:16
+REV0049,U00832,ORD011398,1,Three stars? More like zero. Payment system is completely non-functional on iOS.,ios,2025-01-24 09:03:38
+REV0032,U02325,ORD012922,2,Payment error every time. Error message just says 'Something went wrong'. Not helpful at all.,ios,2025-01-25 00:14:09
+REV0038,U03582,ORD012564,1,Apple Pay used to be so fast. Now it just spins forever and fails.,ios,2025-01-25 11:15:19
+REV0040,U03260,ORD012448,2,The checkout process is painfully slow now. Takes 30+ seconds to process.,ios,2025-01-25 14:54:06
+REV0046,U00973,ORD013143,3,Delivery was cold when it arrived. Took almost an hour.,web,2025-01-26 09:11:39
+REV0026,U03058,ORD013858,2,App freezes during payment every time. Have to force close and restart.,ios,2025-01-26 16:58:42
+REV0039,U00593,ORD013908,1,Got charged twice because the payment timed out but actually went through. Nightmare.,ios,2025-01-26 20:26:37
+REV0030,U02118,ORD012275,1,Deleted the app. Payment hasn't worked in weeks. Terrible experience.,ios,2025-01-27 06:32:35
+REV0037,U02179,ORD012234,1,Was a loyal customer for 2 years. Now I can't even place an order. Sad.,ios,2025-01-27 07:54:28
+REV0041,U01694,ORD013039,5,Ordering was smooth! Got my food in 25 minutes. Great experience.,android,2025-01-27 18:16:58
+REV0022,U04791,ORD012116,1,This app is completely broken. Can't pay for anything on my iPhone.,ios,2025-01-28 11:01:43
+REV0025,U01332,ORD014371,1,Apple Pay is completely broken. Haven't been able to order in 2 weeks.,ios,2025-01-28 15:15:23
+REV0050,U03574,ORD011193,2,Managed to order once today after 6 attempts. The food was good at least.,ios,2025-01-28 17:27:17

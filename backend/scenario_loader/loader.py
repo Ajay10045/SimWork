@@ -39,6 +39,31 @@ def load_scenario(scenario_id: str) -> dict[str, Any]:
     return json.loads(config_path.read_text())
 
 
+def load_tables(scenario_id: str, allowed_files: list[str]) -> dict[str, Any]:
+    """Load specific table files from the scenario's tables/ directory.
+
+    Only loads files that appear in *allowed_files* (agent-scoped access control).
+    Returns a dict mapping filename -> content.
+    """
+    tables_dir = SCENARIOS_DIR / scenario_id / "tables"
+    if not tables_dir.exists():
+        raise FileNotFoundError(f"Tables directory not found: {scenario_id}/tables")
+
+    data: dict[str, Any] = {}
+    for filename in allowed_files:
+        file_path = tables_dir / filename
+        if not file_path.exists():
+            continue
+        if file_path.suffix == ".csv":
+            df = pd.read_csv(file_path)
+            data[file_path.name] = df.to_dict(orient="records")
+        elif file_path.suffix == ".json":
+            data[file_path.name] = json.loads(file_path.read_text())
+        elif file_path.suffix == ".md":
+            data[file_path.name] = file_path.read_text()
+    return data
+
+
 def load_telemetry(scenario_id: str, domain: str) -> dict[str, Any]:
     """Load all telemetry files for a given domain.
 

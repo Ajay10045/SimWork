@@ -35,19 +35,19 @@ const AGENTS = [
     skills: ["User feedback themes", "Support ticket analysis", "Usability findings", "Sentiment patterns"],
   },
   {
-    id: "developer",
-    label: "Developer",
-    subtitle: "Technical Systems Lead",
+    id: "engineering_lead",
+    label: "Engineering Lead",
+    subtitle: "SRE & Systems Expert",
     icon: "terminal",
     color: "amber",
-    skills: ["Service latency checks", "Error rate analysis", "Deployment history", "System health"],
+    skills: ["Deployment history", "Service latency & health", "Error pattern analysis", "System architecture"],
   },
 ] as const;
 
 const QUICK_SUGGESTIONS: Record<string, string[]> = {
   analyst: ["Show order trends", "Break down the funnel", "Compare segment performance"],
   ux_researcher: ["Recent user complaints", "Usability test findings", "Feedback sentiment analysis"],
-  developer: ["Check service latency", "Recent deployments", "Error rate trends"],
+  engineering_lead: ["Check service latency", "Recent deployments", "Error rate trends"],
 };
 
 interface ChatMessage {
@@ -589,7 +589,7 @@ export default function WorkspacePage() {
                   const borderAccent: Record<string, string> = {
                     analyst: "border-t-sky-500/60",
                     ux_researcher: "border-t-violet-500/60",
-                    developer: "border-t-amber-500/60",
+                    engineering_lead: "border-t-amber-500/60",
                   };
                   const chartIcon: Record<string, string> = {
                     bar: "bar_chart",

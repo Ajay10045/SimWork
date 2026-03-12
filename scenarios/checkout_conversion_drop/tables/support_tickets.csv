@@ -1,0 +1,41 @@
+ticket_id,user_id,category,subcategory,description,platform,priority,status,created_at,resolved_at
+TK0001,U02321,delivery,late_delivery,My order was 30 minutes late. The tracker showed the driver going in the wrong direction.,android,medium,resolved,2024-12-22 16:38:17,2024-12-22 22:38:17
+TK0002,U00493,account,login_issue,Can't log into my account. Password reset email never arrives.,web,medium,resolved,2024-12-24 00:54:53,2024-12-24 04:54:53
+TK0004,U02414,delivery,wrong_order,Received completely wrong order. Got sushi instead of pizza.,android,high,resolved,2024-12-27 11:46:44,2024-12-27 14:46:44
+TK0003,U03335,ui_bug,display_issue,Menu item images are overlapping with the text on smaller iPhone screens. Hard to read descriptions.,ios,low,resolved,2024-12-28 18:25:47,2024-12-29 06:25:47
+TK0005,U01755,promo,code_not_working,Holiday promo code FESTIVE24 isn't applying the discount.,ios,low,resolved,2024-12-31 14:10:21,2024-12-31 22:10:21
+TK0006,U00797,account,profile_update,Can't update my delivery address. Save button doesn't respond.,web,medium,resolved,2025-01-08 13:55:20,2025-01-08 18:55:20
+TK0008,U01861,payment,timeout,Payment processing takes over 30 seconds and then times out. Tried 4 times.,ios,high,open,2025-01-11 08:44:05,
+TK0007,U03311,payment,failure,Payment fails every time at the final step. Using iPhone 15 with Apple Pay. Error says 'Something went wrong'.,ios,high,open,2025-01-11 21:18:25,
+TK0009,U03628,checkout,payment_error,Can't complete checkout. Apple Pay just spins and eventually shows an error.,ios,high,in_progress,2025-01-13 19:45:38,
+TK0010,U02546,payment,failure,Credit card payment not working on iOS app. Same card works fine on the website.,ios,high,in_progress,2025-01-14 00:14:18,
+TK0013,U02465,payment,generic_error,Getting 'Payment could not be processed' error on every order attempt.,ios,critical,open,2025-01-14 05:37:22,
+TK0011,U03244,payment,failure,Payment failed once but worked on retry. Just wanted to report it.,android,medium,resolved,2025-01-14 07:37:15,2025-01-14 13:37:15
+TK0012,U02983,payment,timeout,"Every payment attempt times out. iPhone SE, tried both Apple Pay and credit card.",ios,high,open,2025-01-14 20:03:57,
+TK0014,U02350,checkout,payment_error,Checkout completely broken. The payment step hangs for a long time then fails.,ios,critical,in_progress,2025-01-14 21:01:50,
+TK0016,U01723,payment,failure,Apple Pay completely non-functional. 'Gateway timeout' error.,ios,critical,in_progress,2025-01-16 16:20:52,
+TK0015,U04504,payment,timeout,Payment times out every time. Been trying for a week. iPhone 14 Pro.,ios,critical,open,2025-01-16 22:44:45,
+TK0017,U01989,payment,timeout,Can't order food. Payment always times out. This is ridiculous.,ios,critical,open,2025-01-18 05:13:50,
+TK0019,U01244,payment,generic_error,Generic 'Something went wrong' error on every payment attempt. No useful info.,ios,critical,in_progress,2025-01-18 09:57:24,
+TK0020,U00228,payment,failure,iOS payment broken for 10+ days. When will this be fixed?,ios,critical,open,2025-01-18 22:07:41,
+TK0018,U01018,payment,retry_unavailable,Payment fails and there's no retry button. Have to start the whole order over.,ios,high,open,2025-01-19 00:26:06,
+TK0022,U01405,payment,failure,My wife's Android phone works fine. My iPhone can't process any payment.,ios,high,open,2025-01-20 06:24:32,
+TK0025,U03838,promo,code_not_working,Promo code WINTER25 isn't working. It should give 15% off.,web,low,resolved,2025-01-20 06:26:11,2025-01-20 16:26:11
+TK0021,U02559,payment,timeout,"Payment gateway timeout. Tried credit card, Apple Pay, all fail on iPhone.",ios,critical,open,2025-01-20 22:58:53,
+TK0023,U03687,payment,timeout,Payment hangs for 30+ seconds then shows timeout error. Every single time.,ios,critical,open,2025-01-21 15:52:59,
+TK0027,U04067,payment,timeout,Payment timeout again. This has been going on for almost 2 weeks!,ios,critical,open,2025-01-22 04:57:09,
+TK0024,U04960,payment,generic_error,Error: PAYMENT_PROVIDER_ERROR. What does this mean? Can't order anything.,ios,critical,in_progress,2025-01-22 14:14:26,
+TK0026,U02088,payment,failure,Switched to competitor because FoodDash payments are broken on iOS.,ios,critical,open,2025-01-22 16:02:04,
+TK0028,U03709,payment,retry_unavailable,No retry option after payment fails. Have to re-add all items to cart.,ios,high,open,2025-01-23 18:38:42,
+TK0029,U00522,payment,failure,URGENT: Cannot process any payment on iPhone. Losing customers.,ios,critical,open,2025-01-24 11:19:32,
+TK0032,U00986,payment,generic_error,"Getting different errors now - sometimes timeout, sometimes provider error.",ios,critical,in_progress,2025-01-24 20:26:01,
+TK0031,U01556,payment,timeout,"Gateway timeout on every order. Updated app, restarted phone, nothing helps.",ios,critical,open,2025-01-24 21:30:25,
+TK0034,U03774,payment,failure,Haven't been able to order in 2 weeks. All iOS users I know have this issue.,ios,critical,open,2025-01-25 00:35:58,
+TK0035,U03125,payment,timeout,Payment timeout. Tried 8 times today. Only succeeded once after waiting 45 seconds.,ios,critical,open,2025-01-25 08:50:45,
+TK0030,U04588,delivery,late_delivery,Delivery was 45 minutes late. Driver seemed lost.,android,medium,resolved,2025-01-25 22:04:47,2025-01-26 02:04:47
+TK0033,U03409,account,profile_update,Can't update my delivery address. The save button doesn't do anything.,web,medium,in_progress,2025-01-26 13:17:11,
+TK0037,U00538,payment,retry_unavailable,Why is there no retry button? Making me rebuild my cart from scratch every time.,ios,high,open,2025-01-26 18:44:30,
+TK0038,U02285,payment,timeout,Payment service is still broken on iPhone. It's been 17 days. Please fix this.,ios,critical,open,2025-01-27 07:00:41,
+TK0039,U01400,payment,generic_error,Constant payment errors on iOS. Considering deleting the app permanently.,ios,critical,open,2025-01-27 17:44:29,
+TK0036,U00206,payment,failure,Credit card gets charged but order shows as failed. Had to dispute with bank.,ios,critical,open,2025-01-27 20:32:03,
+TK0040,U03398,payment,failure,iOS payment completely broken. Android works fine. Something is clearly wrong with the iOS payment path.,ios,critical,open,2025-01-28 16:55:26,
