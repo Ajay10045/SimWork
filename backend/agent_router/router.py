@@ -10,6 +10,7 @@ from typing import Any
 from data_layer.db import (
     execute_authorized_select,
     get_document,
+    get_distinct_value_previews,
     get_sample_rows,
     get_table_columns,
     get_table_row_count,
@@ -24,14 +25,24 @@ logger = logging.getLogger(__name__)
 MAX_HISTORY_ITEMS = 12
 MAX_INVESTIGATION_ATTEMPTS = 4
 MAX_RESULT_ROWS = 12
+MAX_CLARIFICATION_QUESTIONS = 3
 
 PLAN_SCHEMA = {
     "question_understanding": "Short summary of the user's ask",
     "complexity": "single_query | multi_step",
     "sub_questions": ["Optional sub-question"],
-    "target_tables": ["Allowed source name such as orders.csv"],
+    "target_tables": ["Allowed source name such as orders"],
     "stop_condition": "What evidence is enough to answer",
     "next_steps": ["Follow-up the user might ask next"],
+    "needs_clarification": False,
+    "clarification_reason": "Why a clarification is required before reliable analysis",
+    "pending_follow_up": {
+        "prompt": "Single clarifying question to ask the user",
+        "choices": ["Suggested reply"],
+        "default_choice": "Recommended reply",
+        "resolved_query_template": "{original_question} by {choice}",
+        "allow_free_text": True,
+    },
 }
 
 ACTION_SCHEMA = {
@@ -62,39 +73,88 @@ def route_query(
     history = conversation_history or []
 
     role = get_agent_role_config(scenario_id, agent)
-    source_metadata = _build_source_metadata(scenario_id, role["allowed_tables"])
+    source_metadata = _build_source_metadata(
+        scenario_id,
+        role["allowed_tables"],
+        role.get("allowed_documents", []),
+    )
     shared_context = _build_shared_context(history)
     last_turn_context = _last_agent_turn_context(history, agent)
+    clarification_state = _clarification_state(history, agent)
+    clarification_resolution = _resolve_clarification_reply(query, clarification_state)
+    original_query = clarification_resolution["original_query"] or query
+    effective_query = clarification_resolution["effective_query"] or query
+    clarification_history = clarification_resolution["clarification_history"]
 
     plan, plan_warning = _plan_investigation(
         llm=llm,
         agent=agent,
         role=role,
-        query=query,
+        query=effective_query,
+        original_query=original_query,
         source_metadata=source_metadata,
         shared_context=shared_context,
         last_turn_context=last_turn_context,
+        clarification_state=clarification_state,
+        clarification_resolution=clarification_resolution,
     )
+    plan = _finalize_plan_clarification_state(
+        plan=plan,
+        original_query=original_query,
+        effective_query=effective_query,
+        prior_clarification_count=clarification_state["clarification_count"],
+        clarification_history=clarification_history,
+    )
+    clarification_warning = _clarification_cap_warning(plan, clarification_state["clarification_count"])
+    if clarification_warning:
+        warnings_seed = [clarification_warning]
+        plan["pending_follow_up"] = None
+        plan["needs_clarification"] = False
+    else:
+        warnings_seed = []
+
+    if plan.get("pending_follow_up"):
+        response = _clarification_response(plan)
+        warnings = warnings_seed[:]
+        if plan_warning:
+            warnings.append(plan_warning)
+        if clarification_resolution.get("note"):
+            warnings.append(clarification_resolution["note"])
+        return {
+            "agent": agent,
+            "response": response,
+            "artifacts": [],
+            "citations": [],
+            "warnings": _unique_preserve(warnings),
+            "next_steps": plan.get("next_steps") or [],
+            "pending_follow_up": plan.get("pending_follow_up"),
+            "intent_class": "investigation",
+            "_planner": plan,
+            "_attempts": [],
+        }
 
     evidence, attempts, warnings = _run_investigation_loop(
         llm=llm,
         scenario_id=scenario_id,
         agent=agent,
         role=role,
-        query=query,
+        query=effective_query,
         plan=plan,
         source_metadata=source_metadata,
         shared_context=shared_context,
     )
+    warnings = warnings_seed + warnings
     if plan_warning:
         warnings.append(plan_warning)
+    if clarification_resolution.get("note"):
+        warnings.append(clarification_resolution["note"])
 
     artifacts, citations = _build_artifacts_and_citations(evidence, agent)
     response = _synthesize_response(
         llm=llm,
         agent=agent,
         role=role,
-        query=query,
+        query=original_query,
         plan=plan,
         evidence=evidence,
         warnings=warnings,
@@ -108,13 +168,9 @@ def route_query(
         "citations": citations,
         "warnings": _unique_preserve(warnings),
         "next_steps": plan.get("next_steps") or _default_next_steps(role),
-        "pending_follow_up": None,
+        "pending_follow_up": plan.get("pending_follow_up"),
         "intent_class": "investigation",
-        "_planner": {
-            **plan,
-            "shared_context_summary": shared_context,
-            "attempt_count": len(attempts),
-        },
+        "_planner": {**plan, "shared_context_summary": shared_context, "attempt_count": len(attempts)},
         "_attempts": attempts,
     }
 
@@ -124,33 +180,39 @@ def _plan_investigation(
     agent: str,
     role: dict[str, Any],
     query: str,
+    original_query: str,
     source_metadata: list[dict[str, Any]],
     shared_context: list[dict[str, Any]],
     last_turn_context: dict[str, Any] | None,
+    clarification_state: dict[str, Any],
+    clarification_resolution: dict[str, Any],
 ) -> tuple[dict[str, Any], str | None]:
     system = _role_system_prompt(agent, role) + (
         "\n\nCreate a short investigation plan before querying data. "
         "Decide whether the question looks solvable with one query or needs multiple steps. "
+        "Use the provided table metadata, including distinct categorical values, to resolve likely filters before asking the user. "
+        "If metadata is not enough, prefer a small discovery query over a clarifying question. "
+        "Ask a clarifying question only when the ambiguity materially changes the SQL plan or answer semantics. "
+        "Ask one clarifying question at a time, prefer 2-3 suggested answers for common ambiguities, "
+        "always allow free-text clarification, and do not ask more questions if the clarification budget is exhausted. "
         "Return JSON only."
-    )
-    user = json.dumps(
-        {
-            "question": query,
-            "allowed_sources": source_metadata,
-            "shared_context": shared_context,
-            "last_agent_turn": last_turn_context,
-            "response_schema": PLAN_SCHEMA,
-        },
-        ensure_ascii=True,
     )
     plan, error = _chat_json(
         llm=llm,
         system=system,
         payload={
             "question": query,
+            "original_question": original_query,
             "allowed_sources": source_metadata,
             "shared_context": shared_context,
             "last_agent_turn": last_turn_context,
+            "clarification_state": {
+                "clarification_count": clarification_state["clarification_count"],
+                "clarification_budget_remaining": max(0, MAX_CLARIFICATION_QUESTIONS - clarification_state["clarification_count"]),
+                "clarification_history": clarification_resolution["clarification_history"],
+                "unresolved_pending_follow_up": clarification_state.get("pending_follow_up"),
+                "latest_user_reply": clarification_resolution.get("latest_reply"),
+            },
             "response_schema": PLAN_SCHEMA,
         },
         normalize=lambda value: _normalize_plan(value, source_metadata),
@@ -174,11 +236,7 @@ def _run_investigation_loop(
     warnings: list[str] = []
     attempts: list[dict[str, Any]] = []
     evidence: list[dict[str, Any]] = []
-    allowed_sql_tables = {
-        source.removesuffix(".csv")
-        for source in role.get("allowed_tables", [])
-        if source.endswith(".csv")
-    }
+    allowed_sql_tables = set(role.get("allowed_tables", []))
 
     for attempt_no in range(1, MAX_INVESTIGATION_ATTEMPTS + 1):
         action, action_warning = _choose_next_action(
@@ -203,7 +261,7 @@ def _run_investigation_loop(
             record = _execute_document_step(
                 scenario_id=scenario_id,
                 action=action,
-                allowed_sources=role.get("allowed_tables", []),
+                allowed_sources=role.get("allowed_documents", []),
                 query=query,
             )
         else:
@@ -264,6 +322,7 @@ def _choose_next_action(
     system = _role_system_prompt(agent, role) + (
         "\n\nYou are in an investigation loop. "
         "Choose the next best step to answer the question. "
+        "If the user mentioned a segment or category that might match a low-cardinality column, check metadata or run a small discovery query before asking for clarification. "
         "If you already have enough evidence, return action=finish. "
         "Return JSON only."
     )
@@ -319,7 +378,7 @@ def _execute_sql_step(
             "answer_mode": action.get("answer_mode", "table"),
             "sql": sql,
             "error": result["error"],
-            "sources": [f"{name}.csv" for name in result.get("referenced_tables", [])],
+            "sources": result.get("referenced_tables", []),
             "columns": [],
             "rows": [],
             "truncated": False,
@@ -330,7 +389,7 @@ def _execute_sql_step(
         "title": action.get("title") or "SQL result",
         "answer_mode": action.get("answer_mode", "table"),
         "sql": result["executed_sql"],
-        "sources": [f"{name}.csv" for name in result.get("referenced_tables", [])],
+        "sources": result.get("referenced_tables", []),
         "columns": result["columns"],
         "rows": result["rows"],
         "truncated": result["truncated"],
@@ -451,33 +510,40 @@ def _role_system_prompt(agent: str, role: dict[str, Any]) -> str:
     return (
         f"You are {role_name} for ZaikaNow.\n"
         f"Persona: {persona}\n"
-        f"Allowed sources: {tables}\n"
+        f"Allowed database tables: {tables or 'None'}\n"
+        f"Allowed documents: {', '.join(role.get('allowed_documents', [])) or 'None'}\n"
         f"Core skills: {skills}\n"
         "You can make a brief plan before querying. "
         "If a query fails, is empty, or only partially answers the question, revise your approach and try again. "
+        "If the user's request is materially ambiguous, you may ask one clarifying question at a time. "
+        "Before asking for clarification, inspect the provided schema, sample rows, distinct categorical values, "
+        "and, if needed, use a small discovery query to resolve the ambiguity from the database. "
         "Stay within evidence from your allowed sources only."
     )
 
 
-def _build_source_metadata(scenario_id: str, allowed_tables: list[str]) -> list[dict[str, Any]]:
+def _build_source_metadata(
+    scenario_id: str,
+    allowed_tables: list[str],
+    allowed_documents: list[str],
+) -> list[dict[str, Any]]:
     metadata: list[dict[str, Any]] = []
-    for source in allowed_tables:
-        if source.endswith(".csv"):
-            table = source.removesuffix(".csv")
-            schema = get_table_schema(scenario_id, table)
-            metadata.append(
-                {
-                    "name": source,
-                    "type": "table",
-                    "columns": get_table_columns(scenario_id, table),
-                    "schema": schema,
-                    "row_count": get_table_row_count(scenario_id, table),
-                    "sample_rows": get_sample_rows(scenario_id, table, 3),
-                }
-            )
-        elif source.endswith(".md"):
-            preview = (get_document(scenario_id, source) or "")[:240].replace("\n", " ").strip()
-            metadata.append({"name": source, "type": "document", "preview": preview})
+    for table in allowed_tables:
+        schema = get_table_schema(scenario_id, table)
+        metadata.append(
+            {
+                "name": table,
+                "type": "table",
+                "columns": get_table_columns(scenario_id, table),
+                "schema": schema,
+                "row_count": get_table_row_count(scenario_id, table),
+                "sample_rows": get_sample_rows(scenario_id, table, 3),
+                "distinct_value_previews": get_distinct_value_previews(scenario_id, table),
+            }
+        )
+    for source in allowed_documents:
+        preview = (get_document(scenario_id, source) or "")[:240].replace("\n", " ").strip()
+        metadata.append({"name": source, "type": "document", "preview": preview})
     return metadata
 
 
@@ -528,6 +594,9 @@ def _normalize_plan(plan: dict[str, Any], source_metadata: list[dict[str, Any]])
         "target_tables": target_tables,
         "stop_condition": str(plan.get("stop_condition") or "").strip() or "Stop when the answer is supported by query results.",
         "next_steps": next_steps,
+        "needs_clarification": bool(plan.get("needs_clarification") or plan.get("pending_follow_up")),
+        "clarification_reason": str(plan.get("clarification_reason") or "").strip(),
+        "pending_follow_up": _normalize_pending_follow_up(plan.get("pending_follow_up")),
     }
 
 
@@ -563,6 +632,9 @@ def _generic_plan(source_metadata: list[dict[str, Any]]) -> dict[str, Any]:
         "target_tables": [item["name"] for item in source_metadata],
         "stop_condition": "Stop when the answer is supported by successful query results.",
         "next_steps": [],
+        "needs_clarification": False,
+        "clarification_reason": "",
+        "pending_follow_up": None,
     }
 
 
@@ -703,6 +775,159 @@ def _unique_preserve(items: list[str]) -> list[str]:
         seen.add(item)
         result.append(item)
     return result
+
+
+def _normalize_pending_follow_up(value: Any) -> dict[str, Any] | None:
+    if not isinstance(value, dict):
+        return None
+    prompt = str(value.get("prompt") or "").strip()
+    raw_choices = value.get("choices") or []
+    choices = [str(choice).strip() for choice in raw_choices if str(choice).strip()][:3]
+    if not prompt:
+        return None
+    default_choice = str(value.get("default_choice") or (choices[0] if choices else "")).strip()
+    if choices and default_choice not in choices:
+        default_choice = choices[0]
+    resolved_query_template = str(value.get("resolved_query_template") or "{original_question}\nClarification: {choice}").strip()
+    return {
+        "prompt": prompt,
+        "choices": choices,
+        "default_choice": default_choice,
+        "resolved_query_template": resolved_query_template,
+        "allow_free_text": bool(value.get("allow_free_text", True)),
+    }
+
+
+def _last_same_agent_history_item(history: list[dict[str, Any]], agent: str) -> dict[str, Any] | None:
+    for item in reversed(history):
+        if item.get("agent") == agent:
+            return item
+    return None
+
+
+def _clarification_state(history: list[dict[str, Any]], agent: str) -> dict[str, Any]:
+    last_item = _last_same_agent_history_item(history, agent)
+    planner = (last_item or {}).get("planner") or {}
+    clarification_history = planner.get("clarification_history") or []
+    if not isinstance(clarification_history, list):
+        clarification_history = []
+    clarification_count = int(planner.get("clarification_count") or 0)
+    pending_follow_up = _normalize_pending_follow_up(planner.get("pending_follow_up"))
+    original_question = str(planner.get("original_query") or (last_item or {}).get("query") or "").strip()
+    effective_query = str(planner.get("effective_query") or (last_item or {}).get("query") or "").strip()
+    return {
+        "clarification_count": clarification_count,
+        "clarification_history": clarification_history,
+        "pending_follow_up": pending_follow_up,
+        "original_query": original_question,
+        "effective_query": effective_query,
+        "last_item": last_item,
+    }
+
+
+def _resolve_clarification_reply(query: str, clarification_state: dict[str, Any]) -> dict[str, Any]:
+    pending = clarification_state.get("pending_follow_up")
+    original_query = clarification_state.get("original_query") or query
+    clarification_history = list(clarification_state.get("clarification_history") or [])
+    if not pending:
+        return {
+            "original_query": query,
+            "effective_query": query,
+            "clarification_history": clarification_history,
+            "note": None,
+            "latest_reply": None,
+        }
+
+    reply = query.strip()
+    matched_choice = _match_pending_choice(reply, pending.get("choices", []))
+    chosen_value = matched_choice or reply
+    effective_query = _render_resolved_query(
+        pending.get("resolved_query_template") or "{original_question}\nClarification: {choice}",
+        original_query,
+        chosen_value,
+    )
+    mode = "choice" if matched_choice else "free_text"
+    clarification_history.append(
+        {
+            "prompt": pending.get("prompt"),
+            "answer": chosen_value,
+            "mode": mode,
+            "resolved_query": effective_query,
+        }
+    )
+    note = "Resolved the user's reply against the agent's clarifying question."
+    if not matched_choice:
+        note = "Used the user's free-text clarification to continue the investigation."
+    return {
+        "original_query": original_query,
+        "effective_query": effective_query,
+        "clarification_history": clarification_history,
+        "note": note,
+        "latest_reply": reply,
+    }
+
+
+def _match_pending_choice(reply: str, choices: list[str]) -> str | None:
+    normalized_reply = _normalize_text(reply)
+    if not normalized_reply:
+        return None
+    exact = next((choice for choice in choices if _normalize_text(choice) == normalized_reply), None)
+    if exact:
+        return exact
+    partial_matches = [choice for choice in choices if normalized_reply in _normalize_text(choice)]
+    if len(partial_matches) == 1:
+        return partial_matches[0]
+    return None
+
+
+def _render_resolved_query(template: str, original_query: str, choice: str) -> str:
+    try:
+        return template.format(choice=choice, original_question=original_query)
+    except Exception:
+        return f"{original_query}\nClarification: {choice}"
+
+
+def _finalize_plan_clarification_state(
+    plan: dict[str, Any],
+    original_query: str,
+    effective_query: str,
+    prior_clarification_count: int,
+    clarification_history: list[dict[str, Any]],
+) -> dict[str, Any]:
+    pending_follow_up = plan.get("pending_follow_up")
+    clarification_count = prior_clarification_count + (1 if pending_follow_up else 0)
+    return {
+        **plan,
+        "original_query": original_query,
+        "effective_query": effective_query,
+        "clarification_count": clarification_count,
+        "clarification_history": clarification_history,
+    }
+
+
+def _clarification_cap_warning(plan: dict[str, Any], prior_clarification_count: int) -> str | None:
+    if not plan.get("pending_follow_up"):
+        return None
+    if prior_clarification_count >= MAX_CLARIFICATION_QUESTIONS:
+        return "Clarification limit reached, so the agent proceeded without asking another question."
+    return None
+
+
+def _clarification_response(plan: dict[str, Any]) -> str:
+    pending = plan.get("pending_follow_up") or {}
+    reason = str(plan.get("clarification_reason") or "").strip()
+    parts = []
+    if reason:
+        parts.append(reason)
+    parts.append(str(pending.get("prompt") or "").strip())
+    choices = pending.get("choices") or []
+    if choices:
+        parts.append("\n".join(f"- {choice}" for choice in choices))
+    return "\n\n".join(part for part in parts if part).strip()
+
+
+def _normalize_text(value: str) -> str:
+    return " ".join(value.lower().split())
 
 
 def _chat_json(

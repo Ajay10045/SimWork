@@ -23,7 +23,7 @@ def get_connection(scenario_id: str) -> sqlite3.Connection:
         path = _db_path(scenario_id)
         if not path.exists():
             raise FileNotFoundError(
-                f"Database not found: {path}. Run: python scripts/csv_to_sqlite.py {scenario_id}"
+                f"Database not found: {path}. Run the scenario generator to create scenario.db."
             )
         conn = sqlite3.connect(str(path), check_same_thread=False)
         conn.row_factory = sqlite3.Row
@@ -99,6 +99,50 @@ def get_document(scenario_id: str, name: str) -> str | None:
 def get_sample_rows(scenario_id: str, table: str, n: int = 3) -> list[dict[str, Any]]:
     """Return the first n rows of a table."""
     return query(scenario_id, f"SELECT * FROM [{table}] LIMIT ?", (n,))
+
+
+def get_distinct_value_previews(
+    scenario_id: str,
+    table: str,
+    *,
+    max_unique: int = 12,
+    max_values: int = 8,
+) -> list[dict[str, Any]]:
+    """Return low-cardinality distinct values for likely categorical columns."""
+    previews: list[dict[str, Any]] = []
+    for column in get_table_schema(scenario_id, table):
+        column_name = column["name"]
+        column_type = (column["type"] or "").upper()
+        if any(token in column_type for token in ("INT", "REAL", "NUM", "DEC", "FLOAT", "DOUBLE")):
+            continue
+
+        distinct_count = query_value(
+            scenario_id,
+            f"SELECT COUNT(DISTINCT [{column_name}]) FROM [{table}] WHERE [{column_name}] IS NOT NULL",
+        )
+        if not distinct_count or distinct_count > max_unique:
+            continue
+
+        values = query(
+            scenario_id,
+            (
+                f"SELECT [{column_name}] AS value, COUNT(*) AS count "
+                f"FROM [{table}] "
+                f"WHERE [{column_name}] IS NOT NULL "
+                f"GROUP BY [{column_name}] "
+                f"ORDER BY count DESC, [{column_name}] ASC "
+                f"LIMIT ?"
+            ),
+            (max_values,),
+        )
+        previews.append(
+            {
+                "column": column_name,
+                "distinct_count": int(distinct_count),
+                "values": values,
+            }
+        )
+    return previews
 
 
 def close_all() -> None:
@@ -189,9 +233,7 @@ def extract_referenced_tables(sql: str) -> set[str]:
     for match in re.finditer(r"\b(?:from|join)\s+([^\s,()]+)", cleaned, flags=re.IGNORECASE):
         token = match.group(1).strip()
         token = token.strip("[]\"`;")
-        if token.lower().endswith(".csv"):
-            token = token[:-4]
-        elif "." in token:
+        if "." in token:
             token = token.split(".")[-1]
         lowered = token.lower()
         if lowered in {"select"}:
@@ -228,15 +270,6 @@ def ensure_limit(sql: str, max_rows: int) -> str:
     if re.search(r"\blimit\s+\d+\b", stripped, flags=re.IGNORECASE):
         return stripped
     return f"{stripped} LIMIT {max_rows}"
-
-
-def normalize_sql_table_references(sql: str) -> str:
-    """Rewrite `.csv` table references to their SQLite table names."""
-    normalized = re.sub(r"\[([A-Za-z0-9_]+)\.csv\]", r"[\1]", sql)
-    normalized = re.sub(r'(?<![\w"])([A-Za-z0-9_]+)\.csv(?![\w"])', r"\1", normalized)
-    return normalized
-
-
 def execute_authorized_select(
     scenario_id: str,
     sql: str,
@@ -257,8 +290,7 @@ def execute_authorized_select(
             "executed_sql": sql,
         }
 
-    normalized_sql = normalize_sql_table_references(sql)
-    limited_sql = ensure_limit(normalized_sql, max_rows + 1)
+    limited_sql = ensure_limit(sql, max_rows + 1)
     try:
         columns, rows = query_with_columns(scenario_id, limited_sql)
     except sqlite3.Error as exc:

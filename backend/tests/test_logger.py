@@ -27,9 +27,9 @@ def test_query_history_persists_query_log_id_and_metadata(tmp_path, monkeypatch)
         citations=[
             {
                 "citation_id": "ev_123",
-                "source": "orders.csv",
+                "source": "orders",
                 "title": "Daily order trend",
-                "summary": "Computed daily order counts from orders.csv.",
+                "summary": "Computed daily order counts from orders.",
             }
         ],
         warnings=["Planner fallback used due to invalid planner output."],
@@ -41,7 +41,7 @@ def test_query_history_persists_query_log_id_and_metadata(tmp_path, monkeypatch)
     assert len(history) == 1
     assert history[0]["query_log_id"] == query_log_id
     assert history[0]["artifacts"][0]["kind"] == "chart"
-    assert history[0]["citations"][0]["source"] == "orders.csv"
+    assert history[0]["citations"][0]["source"] == "orders"
     assert history[0]["warnings"] == ["Planner fallback used due to invalid planner output."]
     assert history[0]["planner"]["intent"] == "trend"
 
@@ -70,9 +70,9 @@ def test_saved_evidence_and_session_events_are_persisted(tmp_path, monkeypatch):
         citations=[
             {
                 "citation_id": "ev_123",
-                "source": "orders.csv",
+                "source": "orders",
                 "title": "Daily order trend",
-                "summary": "Computed daily order counts from orders.csv.",
+                "summary": "Computed daily order counts from orders.",
             }
         ],
         warnings=[],

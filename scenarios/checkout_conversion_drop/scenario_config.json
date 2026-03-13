@@ -157,17 +157,20 @@
     },
     "agent_data_access": {
       "analyst": {
-        "tables": ["orders.csv", "payments.csv", "sessions_events.csv", "users.csv"],
+        "tables": ["orders", "payments", "sessions_events", "users"],
+        "documents": [],
         "access_type": "aggregated_views",
         "description": "Business metrics, funnels, payment method analysis, city and cohort segmentation"
       },
       "ux_researcher": {
-        "tables": ["reviews.csv", "support_tickets.csv", "usability_study.md", "ux_changelog.csv"],
+        "tables": ["reviews", "support_tickets", "ux_changelog"],
+        "documents": ["usability_study.md"],
         "access_type": "direct",
         "description": "User feedback, support tickets, usability research, and product change history"
       },
       "engineering_lead": {
-        "tables": ["deployments.csv", "service_metrics.csv", "system_architecture.md", "payment_errors_summary.csv"],
+        "tables": ["deployments", "service_metrics", "payment_errors_summary"],
+        "documents": ["system_architecture.md"],
         "access_type": "direct",
         "description": "Deployment history, service health metrics, architecture notes, and payment error patterns"
       }

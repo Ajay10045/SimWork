@@ -67,9 +67,16 @@ def get_agent_role_config(scenario_id: str, agent: str) -> dict[str, Any]:
     """Return merged role config with persona, skills, and allowed sources."""
     profile = get_agent_capability_profile(scenario_id, agent)
     access = get_agent_data_access(scenario_id, agent)
+    raw_tables = access.get("tables", [])
+    raw_documents = access.get("documents", [])
+    allowed_tables = [name for name in raw_tables if not str(name).endswith(".md")]
+    allowed_documents = [name for name in raw_documents if str(name).endswith(".md")]
+    if not raw_documents:
+        allowed_documents = [name for name in raw_tables if str(name).endswith(".md")]
     return {
         **profile,
-        "allowed_tables": access.get("tables", []),
+        "allowed_tables": allowed_tables,
+        "allowed_documents": allowed_documents,
         "access_description": access.get("description", ""),
     }
 
@@ -80,27 +87,25 @@ def get_agent_capability_profiles(scenario_id: str) -> dict[str, Any]:
     return scenario.get("data_model", {}).get("agent_capability_profiles", {})
 
 
-def load_tables(scenario_id: str, allowed_files: list[str]) -> dict[str, Any]:
-    """Load specific table files from the scenario's SQLite database.
+def load_tables(scenario_id: str, allowed_sources: list[str]) -> dict[str, Any]:
+    """Load specific sources from the scenario's SQLite database.
 
-    Only loads files that appear in *allowed_files* (agent-scoped access control).
-    Returns a dict mapping filename -> content.
+    Only loads sources that appear in *allowed_sources* (agent-scoped access control).
+    Returns a dict mapping source name -> content.
     """
     from data_layer.db import get_document, query, table_exists
 
     data: dict[str, Any] = {}
-    for filename in allowed_files:
-        if filename.endswith(".csv"):
-            tbl = filename.removesuffix(".csv")
-            if table_exists(scenario_id, tbl):
-                data[filename] = query(scenario_id, f"SELECT * FROM [{tbl}]")
-        elif filename.endswith(".json"):
-            # JSON files are still on filesystem
-            file_path = SCENARIOS_DIR / scenario_id / "tables" / filename
-            if file_path.exists():
-                data[filename] = json.loads(file_path.read_text())
-        elif filename.endswith(".md"):
-            content = get_document(scenario_id, filename)
+    for source_name in allowed_sources:
+        if source_name.endswith(".md"):
+            content = get_document(scenario_id, source_name)
             if content is not None:
-                data[filename] = content
+                data[source_name] = content
+        elif source_name.endswith(".json"):
+            # JSON files are still on filesystem
+            file_path = SCENARIOS_DIR / scenario_id / "tables" / source_name
+            if file_path.exists():
+                data[source_name] = json.loads(file_path.read_text())
+        elif table_exists(scenario_id, source_name):
+            data[source_name] = query(scenario_id, f"SELECT * FROM [{source_name}]")
     return data

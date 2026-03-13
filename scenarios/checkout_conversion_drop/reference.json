@@ -15,7 +15,7 @@
       "agent": "analyst",
       "sources": [
         {
-          "name": "orders.csv",
+          "name": "orders",
           "description": "Order attempts with status, INR amount, platform, city, and created_at timestamp.",
           "fields": [
             { "name": "order_id", "type": "string", "description": "Unique order identifier." },
@@ -28,7 +28,7 @@
           ]
         },
         {
-          "name": "payments.csv",
+          "name": "payments",
           "description": "Payment attempts with method, provider, status, city, platform, and processing time.",
           "fields": [
             { "name": "payment_id", "type": "string", "description": "Unique payment identifier." },
@@ -44,7 +44,7 @@
           ]
         },
         {
-          "name": "sessions_events.csv",
+          "name": "sessions_events",
           "description": "Session-level product events used to reconstruct browse-to-order funnel behavior.",
           "fields": [
             { "name": "session_id", "type": "string", "description": "Unique session identifier." },
@@ -56,7 +56,7 @@
           ]
         },
         {
-          "name": "users.csv",
+          "name": "users",
           "description": "Customer profile data including signup date, platform, city, and user type.",
           "fields": [
             { "name": "user_id", "type": "string", "description": "Unique user identifier." },
@@ -74,7 +74,7 @@
       "agent": "ux_researcher",
       "sources": [
         {
-          "name": "reviews.csv",
+          "name": "reviews",
           "description": "Customer reviews with ratings, platform, city, and free-text feedback.",
           "fields": [
             { "name": "rating", "type": "int", "description": "1-5 star score." },
@@ -84,7 +84,7 @@
           ]
         },
         {
-          "name": "support_tickets.csv",
+          "name": "support_tickets",
           "description": "Support tickets with issue category, city, priority, and operational status.",
           "fields": [
             { "name": "category", "type": "string", "description": "Ticket category such as payment, checkout, delivery, or promo." },
@@ -101,7 +101,7 @@
           "fields": []
         },
         {
-          "name": "ux_changelog.csv",
+          "name": "ux_changelog",
           "description": "Recent UX changes, experiments, and bugfixes across checkout and discovery flows.",
           "fields": [
             { "name": "change_type", "type": "enum", "description": "feature / bugfix / ab_test." },
@@ -115,7 +115,7 @@
       "agent": "engineering_lead",
       "sources": [
         {
-          "name": "deployments.csv",
+          "name": "deployments",
           "description": "Deployment history with service, description, and rollback availability.",
           "fields": [
             { "name": "service", "type": "string", "description": "Service that was deployed." },
@@ -124,7 +124,7 @@
           ]
         },
         {
-          "name": "service_metrics.csv",
+          "name": "service_metrics",
           "description": "Service latency and error-rate metrics by service and date.",
           "fields": [
             { "name": "service", "type": "string", "description": "Service name." },
@@ -135,7 +135,7 @@
           ]
         },
         {
-          "name": "payment_errors_summary.csv",
+          "name": "payment_errors_summary",
           "description": "Aggregated payment error patterns by code, platform, and date.",
           "fields": [
             { "name": "error_code", "type": "string", "description": "Observed payment error code." },

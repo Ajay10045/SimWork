@@ -664,7 +664,10 @@ export default function WorkspacePage() {
   const selectedAgentInfo = AGENTS.find((item) => item.id === selectedAgent)!;
   const selectedAgentSources = getAgentSources(selectedAgent, scenarioDetail?.reference_panel);
   const currentAgentGuidance = agentGuidance[selectedAgent];
-  const currentSuggestions = QUICK_SUGGESTIONS[selectedAgent] || [];
+  const currentPendingFollowUp = currentAgentGuidance?.pendingFollowUp || null;
+  const currentSuggestions = currentPendingFollowUp?.choices?.length
+    ? currentPendingFollowUp.choices
+    : (currentAgentGuidance?.suggestions?.length ? currentAgentGuidance.suggestions : (QUICK_SUGGESTIONS[selectedAgent] || []));
   const queryCount = useMemo(() => messages.filter((item) => item.role === "user").length, [messages]);
 
   const sendQuery = useCallback(async (query: string, inputMode: "typed" | "suggestion" = "typed") => {
@@ -950,6 +953,37 @@ export default function WorkspacePage() {
             <div ref={chatEndRef} />
           </div>
 
+          {currentPendingFollowUp && (
+            <div className="px-4 py-3 border-t border-slate-200 dark:border-slate-800/30 bg-emerald-500/5 dark:bg-emerald-500/10">
+              <p className="text-[11px] font-semibold text-emerald-600 dark:text-emerald-300">
+                {selectedAgentInfo.label} needs one clarification
+              </p>
+              <p className="mt-1 text-xs text-slate-700 dark:text-slate-200">{currentPendingFollowUp.prompt}</p>
+              {!!currentPendingFollowUp.choices?.length && (
+                <div className="mt-2 flex gap-1.5 flex-wrap">
+                  {currentPendingFollowUp.choices.slice(0, 3).map((choice) => (
+                    <button
+                      key={choice}
+                      onClick={() => {
+                        logUiEvent("suggestion_clicked", { agent: selectedAgent, suggestion: choice, type: "clarification" });
+                        sendQuery(choice, "suggestion");
+                      }}
+                      disabled={isQuerying}
+                      className="text-[10px] px-2.5 py-1 rounded-full border border-emerald-500/40 text-emerald-600 dark:text-emerald-300 hover:bg-emerald-500/10 transition-colors disabled:opacity-40"
+                    >
+                      {choice}
+                    </button>
+                  ))}
+                </div>
+              )}
+              {currentPendingFollowUp.allow_free_text !== false && (
+                <p className="mt-2 text-[10px] text-slate-500 dark:text-slate-400">
+                  You can also answer in your own words below.
+                </p>
+              )}
+            </div>
+          )}
+
           <div className="px-4 py-1.5 border-t border-slate-200 dark:border-slate-800/30 flex gap-1.5 flex-wrap">
             {currentSuggestions.slice(0, 3).map((suggestion) => (
               <button
@@ -970,7 +1004,7 @@ export default function WorkspacePage() {
             <div className="relative">
               <input
                 className={`w-full bg-slate-100 dark:bg-slate-800 border border-slate-300 dark:border-slate-700/50 rounded-lg pl-3 pr-10 py-2.5 text-sm text-slate-900 dark:text-slate-200 placeholder-slate-400 dark:placeholder-slate-600 ${ACCENT_RING} focus:ring-2 focus:border-transparent outline-none`}
-                placeholder={`Ask ${selectedAgentInfo.label} a question...`}
+                placeholder={currentPendingFollowUp ? `Reply to ${selectedAgentInfo.label}'s clarification...` : `Ask ${selectedAgentInfo.label} a question...`}
                 value={input}
                 onChange={(event) => setInput(event.target.value)}
                 onKeyDown={(event) => event.key === "Enter" && handleSend()}

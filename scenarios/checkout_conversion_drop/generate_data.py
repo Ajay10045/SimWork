@@ -15,6 +15,7 @@ import csv
 import hashlib
 import os
 import random
+import sqlite3
 from collections import defaultdict
 from datetime import datetime, timedelta
 
@@ -22,6 +23,7 @@ random.seed(42)
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 TABLES_DIR = os.path.join(SCRIPT_DIR, "tables")
+DB_PATH = os.path.join(TABLES_DIR, "scenario.db")
 os.makedirs(TABLES_DIR, exist_ok=True)
 
 START_DATE = datetime(2024, 7, 1)
@@ -184,6 +186,7 @@ CITIES = [city for city, _, _ in PROFILE["cities"]]
 CITY_WEIGHTS = [weight for _, weight, _ in PROFILE["cities"]]
 CITY_AREAS = {city: areas for city, _, areas in PROFILE["cities"]}
 USER_TYPES = PROFILE["user_types"]
+CONN: sqlite3.Connection | None = None
 
 
 def jitter(value: float, pct: float = 0.05) -> float:
@@ -211,20 +214,58 @@ def sanitize_token(text: str) -> str:
     return "".join(ch.lower() for ch in text if ch.isalnum())
 
 
-def write_csv(filename: str, headers: list[str], rows: list[list[object]]) -> None:
-    path = os.path.join(TABLES_DIR, filename)
-    with open(path, "w", newline="") as handle:
-        writer = csv.writer(handle)
-        writer.writerow(headers)
-        writer.writerows(rows)
-    print(f"  -> {filename}: {len(rows)} rows")
+def reset_database() -> sqlite3.Connection:
+    if os.path.exists(DB_PATH):
+        os.remove(DB_PATH)
+    conn = sqlite3.connect(DB_PATH)
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS documents (
+            name TEXT PRIMARY KEY,
+            content TEXT NOT NULL
+        )
+        """
+    )
+    conn.commit()
+    return conn
+
+
+def _infer_sqlite_type(values: list[object]) -> str:
+    non_null = [value for value in values if value not in {"", None}]
+    if not non_null:
+        return "TEXT"
+    if all(isinstance(value, int) and not isinstance(value, bool) for value in non_null):
+        return "INTEGER"
+    if all(isinstance(value, (int, float)) and not isinstance(value, bool) for value in non_null):
+        return "REAL"
+    return "TEXT"
+
+
+def write_table(table_name: str, headers: list[str], rows: list[list[object]]) -> None:
+    if CONN is None:
+        raise RuntimeError("Database connection has not been initialized.")
+    column_types = [_infer_sqlite_type([row[index] for row in rows]) for index in range(len(headers))]
+    quoted_columns = ", ".join(f"[{header}] {column_type}" for header, column_type in zip(headers, column_types))
+    placeholders = ", ".join("?" for _ in headers)
+    CONN.execute(f"DROP TABLE IF EXISTS [{table_name}]")
+    CONN.execute(f"CREATE TABLE [{table_name}] ({quoted_columns})")
+    CONN.executemany(
+        f"INSERT INTO [{table_name}] ({', '.join(f'[{header}]' for header in headers)}) VALUES ({placeholders})",
+        rows,
+    )
+    CONN.commit()
+    print(f"  -> {table_name}: {len(rows)} rows")
 
 
 def write_md(filename: str, content: str) -> None:
-    path = os.path.join(TABLES_DIR, filename)
-    with open(path, "w") as handle:
-        handle.write(content)
-    print(f"  -> {filename}: written")
+    if CONN is None:
+        raise RuntimeError("Database connection has not been initialized.")
+    CONN.execute(
+        "INSERT OR REPLACE INTO documents (name, content) VALUES (?, ?)",
+        (filename, content),
+    )
+    CONN.commit()
+    print(f"  -> {filename}: written to documents table")
 
 
 def phase_for_date(current: datetime) -> str:
@@ -242,7 +283,7 @@ def city_is_primary(city: str) -> bool:
 
 
 def generate_users(n: int = 6500):
-    print("Generating users.csv...")
+    print("Generating users table...")
     rows = []
     for i in range(1, n + 1):
         user_id = f"U{i:05d}"
@@ -254,12 +295,12 @@ def generate_users(n: int = 6500):
         signup = random_datetime(datetime(2023, 1, 1), datetime(2025, 3, 20)).strftime("%Y-%m-%d")
         email = f"{sanitize_token(first)}.{sanitize_token(last)}{i}@{PROFILE['email_domain']}"
         rows.append([user_id, f"{first} {last}", email, gen_phone(), signup, platform, city, user_type])
-    write_csv("users.csv", ["user_id", "name", "email", "phone", "signup_date", "platform", "city", "user_type"], rows)
+    write_table("users", ["user_id", "name", "email", "phone", "signup_date", "platform", "city", "user_type"], rows)
     return rows
 
 
 def generate_restaurants(users):
-    print("Generating restaurants.csv...")
+    print("Generating restaurants table...")
     rows = []
     restaurant_id = 1
     for city in CITIES:
@@ -272,12 +313,12 @@ def generate_restaurants(users):
                 rating = round(random.uniform(3.7, 4.8), 1)
                 rows.append([f"R{restaurant_id:04d}", name, cuisine, address, rating, owner_id])
                 restaurant_id += 1
-    write_csv("restaurants.csv", ["restaurant_id", "name", "cuisine_type", "address", "rating", "owner_id"], rows)
+    write_table("restaurants", ["restaurant_id", "name", "cuisine_type", "address", "rating", "owner_id"], rows)
     return rows
 
 
 def generate_menu_items(restaurants):
-    print("Generating menu_items.csv...")
+    print("Generating menu_items table...")
     rows = []
     item_id = 1
     restaurant_menu_map = {}
@@ -293,7 +334,7 @@ def generate_menu_items(restaurants):
             rows.append([f"MI{item_id:05d}", restaurant_id, name, description, price])
             item_id += 1
         restaurant_menu_map[restaurant_id] = ids
-    write_csv("menu_items.csv", ["item_id", "restaurant_id", "name", "description", "price"], rows)
+    write_table("menu_items", ["item_id", "restaurant_id", "name", "description", "price"], rows)
     return rows, restaurant_menu_map
 
 
@@ -350,7 +391,7 @@ def order_status_probs(current: datetime, platform: str, city: str, user_type: s
 
 
 def generate_orders(users, restaurants, restaurant_menu_map):
-    print("Generating orders.csv...")
+    print("Generating orders table...")
     user_lookup = {user[0]: {"platform": user[5], "city": user[6], "user_type": user[7]} for user in users}
     users_by_platform = {platform: [user for user in users if user[5] == platform] for platform in PLATFORMS}
     restaurant_ids = [restaurant[0] for restaurant in restaurants]
@@ -404,8 +445,8 @@ def generate_orders(users, restaurants, restaurant_menu_map):
             order_id += 1
         current += timedelta(days=1)
 
-    write_csv(
-        "orders.csv",
+    write_table(
+        "orders",
         ["order_id", "user_id", "restaurant_id", "order_status", "total_amount", "platform", "city", "created_at"],
         rows,
     )
@@ -413,7 +454,7 @@ def generate_orders(users, restaurants, restaurant_menu_map):
 
 
 def generate_order_items(orders, restaurant_menu_map):
-    print("Generating order_items.csv...")
+    print("Generating order_items table...")
     rows = []
     order_item_id = 1
     for order in orders:
@@ -423,12 +464,12 @@ def generate_order_items(orders, restaurant_menu_map):
             quantity = weighted_choice([1, 2, 3], [72, 23, 5])
             rows.append([f"OI{order_item_id:06d}", order[0], item_id, quantity])
             order_item_id += 1
-    write_csv("order_items.csv", ["order_item_id", "order_id", "item_id", "quantity"], rows)
+    write_table("order_items", ["order_item_id", "order_id", "item_id", "quantity"], rows)
     return rows
 
 
 def generate_drivers(n: int = 260):
-    print("Generating drivers.csv...")
+    print("Generating drivers table...")
     rows = []
     statuses = ["available", "on_delivery", "offline"]
     for i in range(1, n + 1):
@@ -436,7 +477,7 @@ def generate_drivers(n: int = 260):
         last = random.choice(PROFILE["last_names"])
         city = weighted_choice(CITIES, CITY_WEIGHTS)
         rows.append([f"D{i:04d}", f"{first} {last}", gen_phone(), city, weighted_choice(statuses, [44, 34, 22])])
-    write_csv("drivers.csv", ["driver_id", "name", "phone", "city", "availability_status"], rows)
+    write_table("drivers", ["driver_id", "name", "phone", "city", "availability_status"], rows)
     return rows
 
 
@@ -520,7 +561,7 @@ def payment_outcome(current: datetime, platform: str, city: str, user_type: str,
 
 
 def generate_payments(orders, user_lookup):
-    print("Generating payments.csv...")
+    print("Generating payments table...")
     rows = []
     for index, order in enumerate(orders, start=1):
         order_id, user_id, _, order_status, amount, platform, city, created_at = order
@@ -560,8 +601,8 @@ def generate_payments(orders, user_lookup):
             created_at,
         ])
 
-    write_csv(
-        "payments.csv",
+    write_table(
+        "payments",
         ["payment_id", "order_id", "user_id", "method", "provider", "status", "amount", "processing_time_ms", "error_code", "platform", "city", "created_at"],
         rows,
     )
@@ -605,7 +646,7 @@ def session_completion_prob(current: datetime, platform: str, city: str, user_ty
 
 
 def generate_session_events(users, orders):
-    print("Generating sessions_events.csv...")
+    print("Generating sessions_events table...")
     rows = []
     users_by_platform = {platform: [user for user in users if user[5] == platform] for platform in PLATFORMS}
     event_id = 1
@@ -666,8 +707,8 @@ def generate_session_events(users, orders):
             session_id += 1
         current += timedelta(days=1)
 
-    write_csv(
-        "sessions_events.csv",
+    write_table(
+        "sessions_events",
         ["event_id", "user_id", "session_id", "event_type", "platform", "city", "device", "app_version", "timestamp"],
         rows,
     )
@@ -675,7 +716,7 @@ def generate_session_events(users, orders):
 
 
 def generate_reviews(users, orders):
-    print("Generating reviews.csv...")
+    print("Generating reviews table...")
     rows = []
 
     orders_by_window = defaultdict(list)
@@ -735,12 +776,12 @@ def generate_reviews(users, orders):
             review_id += 1
 
     rows.sort(key=lambda row: row[7])
-    write_csv("reviews.csv", ["review_id", "user_id", "order_id", "rating", "text", "platform", "city", "created_at"], rows)
+    write_table("reviews", ["review_id", "user_id", "order_id", "rating", "text", "platform", "city", "created_at"], rows)
     return rows
 
 
 def generate_support_tickets(users, orders):
-    print("Generating support_tickets.csv...")
+    print("Generating support_tickets table...")
     rows = []
     users_by_city = defaultdict(list)
     for user in users:
@@ -805,8 +846,8 @@ def generate_support_tickets(users, orders):
         current += timedelta(days=3)
 
     rows.sort(key=lambda row: row[9])
-    write_csv(
-        "support_tickets.csv",
+    write_table(
+        "support_tickets",
         ["ticket_id", "user_id", "category", "subcategory", "description", "platform", "city", "priority", "status", "created_at", "resolved_at"],
         rows,
     )
@@ -887,7 +928,7 @@ Participants were active ZaikaNow customers from Bengaluru, Mumbai, Delhi NCR, H
 
 
 def generate_ux_changelog():
-    print("Generating ux_changelog.csv...")
+    print("Generating ux_changelog table...")
     rows = [
         ["2024-12-18", "feature", "Added cuisine shortcuts for breakfast and biryani", "homepage", "all"],
         ["2024-12-27", "feature", "New Year offer rail on the home feed", "homepage", "all"],
@@ -899,11 +940,11 @@ def generate_ux_changelog():
         ["2025-01-25", "feature", "Republic Day specials collection", "homepage", "all"],
         ["2025-02-08", "bugfix", "Improved failed-payment copy on the review screen", "checkout", "all"],
     ]
-    write_csv("ux_changelog.csv", ["date", "change_type", "description", "affected_area", "platform"], rows)
+    write_table("ux_changelog", ["date", "change_type", "description", "affected_area", "platform"], rows)
 
 
 def generate_deployments():
-    print("Generating deployments.csv...")
+    print("Generating deployments table...")
     rows = [
         ["DEP001", "catalog_service", "Expanded breakfast collections for metro cities", "ananya.iyer", "2024-12-18 09:45:00", "yes", gen_commit_hash()],
         ["DEP002", "notification_service", "New Year reminder campaign scheduler", "rahul.sharma", "2024-12-28 13:10:00", "yes", gen_commit_hash()],
@@ -915,11 +956,11 @@ def generate_deployments():
         ["DEP008", "catalog_service", "Republic Day specials banner and restaurant labels", "sakshi.bose", "2025-01-24 14:30:00", "yes", gen_commit_hash()],
         ["DEP009", "user_service", "Customer support reconciliation workflow", "aditya.menon", "2025-02-10 16:20:00", "yes", gen_commit_hash()],
     ]
-    write_csv("deployments.csv", ["deploy_id", "service", "description", "author", "timestamp", "rollback_available", "commit_hash"], rows)
+    write_table("deployments", ["deploy_id", "service", "description", "author", "timestamp", "rollback_available", "commit_hash"], rows)
 
 
 def generate_service_metrics():
-    print("Generating service_metrics.csv...")
+    print("Generating service_metrics table...")
     services = {
         "payment_service": {"p50": 135, "p95": 310, "p99": 470, "error_rate": 0.4, "requests": 21000},
         "checkout_service": {"p50": 95, "p95": 210, "p99": 340, "error_rate": 0.12, "requests": 26000},
@@ -975,8 +1016,8 @@ def generate_service_metrics():
             rows.append([current.strftime("%Y-%m-%d"), service, p50, p95, p99, error_rate, error_count, requests])
         current += timedelta(days=1)
 
-    write_csv(
-        "service_metrics.csv",
+    write_table(
+        "service_metrics",
         ["date", "service", "p50_ms", "p95_ms", "p99_ms", "error_rate_pct", "error_count", "request_count"],
         rows,
     )
@@ -1039,7 +1080,7 @@ The platform runs on a microservice architecture in AWS ap-south-1 (Mumbai), wit
 
 
 def generate_payment_errors_summary(payments):
-    print("Generating payment_errors_summary.csv...")
+    print("Generating payment_errors_summary table...")
     summary = defaultdict(int)
     for payment in payments:
         status = payment[5]
@@ -1051,16 +1092,19 @@ def generate_payment_errors_summary(payments):
         summary[(date, error_code, platform)] += 1
 
     rows = [[date, error_code, count, platform] for (date, error_code, platform), count in sorted(summary.items())]
-    write_csv("payment_errors_summary.csv", ["date", "error_code", "count", "platform"], rows)
+    write_table("payment_errors_summary", ["date", "error_code", "count", "platform"], rows)
 
 
 def main():
+    global CONN
     print("=" * 60)
     print("ZaikaNow Scenario Data Generator")
     print("Checkout Conversion Drop - RupeeFlow v3 Migration")
     print("=" * 60)
-    print(f"Output directory: {TABLES_DIR}")
+    print(f"Output database: {DB_PATH}")
     print()
+
+    CONN = reset_database()
 
     users = generate_users()
     restaurants = generate_restaurants(users)
@@ -1079,10 +1123,14 @@ def main():
     generate_system_architecture()
     generate_payment_errors_summary(payments)
 
+    if CONN is not None:
+        CONN.close()
+        CONN = None
+
     print()
     print("=" * 60)
     print("Data generation complete!")
-    print(f"All files written to: {TABLES_DIR}")
+    print(f"All data written to: {DB_PATH}")
     print("=" * 60)
 
 

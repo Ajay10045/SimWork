@@ -17,6 +17,7 @@ from typing import Any
 
 from data_layer.db import (
     build_where_clause,
+    get_distinct_value_previews,
     get_document,
     get_sample_rows,
     get_table_columns,
@@ -48,18 +49,6 @@ def _validate_access(agent: str, table: str) -> None:
         )
 
 
-def _table_name(filename: str) -> str:
-    """Convert 'orders.csv' → 'orders'."""
-    if filename.endswith(".csv"):
-        return filename.removesuffix(".csv")
-    return filename
-
-
-# ────────────────────────────────────────────────────
-# Tool 1: query_table
-# ────────────────────────────────────────────────────
-
-
 def query_table(
     scenario_id: str,
     agent: str,
@@ -75,7 +64,7 @@ def query_table(
     """Query a table with optional filters, grouping, aggregation, sorting.
 
     Args:
-        table: filename (e.g. "orders.csv")
+        table: canonical database table name (e.g. "orders")
         columns: Optional list of columns to return
         filters: Dict of column_name -> value or operator conditions
         group_by: Column to group by
@@ -90,11 +79,10 @@ def query_table(
     """
     _validate_access(agent, table)
 
-    tbl = _table_name(table)
-    if not table_exists(scenario_id, tbl):
+    if not table_exists(scenario_id, table):
         return json.dumps({"error": f"Table not found: {table}"})
 
-    all_columns = get_table_columns(scenario_id, tbl)
+    all_columns = get_table_columns(scenario_id, table)
     where, params = build_where_clause(filters, all_columns)
 
     effective_limit = min(limit or MAX_RESULT_ROWS, MAX_RESULT_ROWS)
@@ -105,14 +93,14 @@ def query_table(
         select_expr, val_col = _build_group_select(group_by, agg_fn, all_columns)
 
         # Count total groups
-        count_sql = f"SELECT COUNT(*) FROM (SELECT [{group_by}] FROM [{tbl}] {where} GROUP BY [{group_by}])"
+        count_sql = f"SELECT COUNT(*) FROM (SELECT [{group_by}] FROM [{table}] {where} GROUP BY [{group_by}])"
         total_rows = query_value(scenario_id, count_sql, params) or 0
 
         # Sort
         order_col = sort_by if sort_by and sort_by in (all_columns + [val_col]) else val_col
         direction = "ASC" if sort_order == "asc" else "DESC"
 
-        sql = f"SELECT {select_expr} FROM [{tbl}] {where} GROUP BY [{group_by}] ORDER BY [{order_col}] {direction} LIMIT ?"
+        sql = f"SELECT {select_expr} FROM [{table}] {where} GROUP BY [{group_by}] ORDER BY [{order_col}] {direction} LIMIT ?"
         data = query(scenario_id, sql, params + [effective_limit])
         result_columns = list(data[0].keys()) if data else [group_by, val_col]
     else:
@@ -124,7 +112,7 @@ def query_table(
             select_cols = "*"
 
         # Count total matching rows
-        count_sql = f"SELECT COUNT(*) FROM [{tbl}] {where}"
+        count_sql = f"SELECT COUNT(*) FROM [{table}] {where}"
         total_rows = query_value(scenario_id, count_sql, params) or 0
 
         order_clause = ""
@@ -132,7 +120,7 @@ def query_table(
             direction = "ASC" if sort_order == "asc" else "DESC"
             order_clause = f"ORDER BY [{sort_by}] {direction}"
 
-        sql = f"SELECT {select_cols} FROM [{tbl}] {where} {order_clause} LIMIT ?"
+        sql = f"SELECT {select_cols} FROM [{table}] {where} {order_clause} LIMIT ?"
         data = query(scenario_id, sql, params + [effective_limit])
         result_columns = list(data[0].keys()) if data else all_columns
 
@@ -203,48 +191,13 @@ def read_document(scenario_id: str, agent: str, filename: str) -> str:
 def describe_tables(scenario_id: str, agent: str) -> str:
     """List all accessible tables with schema info.
 
-    For each table: name, columns (name + dtype), row count, and a sample row.
+    For each source: name, schema, row count, sample rows, and low-cardinality distinct values.
     """
     allowed = AGENT_TABLE_ACCESS.get(agent, [])
     tables_info = []
 
     for filename in allowed:
-        if filename.endswith(".csv"):
-            tbl = _table_name(filename)
-            if not table_exists(scenario_id, tbl):
-                tables_info.append({"name": filename, "status": "not_found"})
-                continue
-
-            schema = get_table_schema(scenario_id, tbl)
-            col_info = [{"name": s["name"], "dtype": s["type"]} for s in schema]
-            row_count = get_table_row_count(scenario_id, tbl)
-            sample = get_sample_rows(scenario_id, tbl, 2)
-
-            # Date range detection
-            date_cols = [s["name"] for s in schema if any(kw in s["name"].lower() for kw in ("date", "timestamp", "created_at", "_at"))]
-            date_range = None
-            if date_cols:
-                dc = date_cols[0]
-                try:
-                    min_val = query_value(scenario_id, f"SELECT MIN([{dc}]) FROM [{tbl}]")
-                    max_val = query_value(scenario_id, f"SELECT MAX([{dc}]) FROM [{tbl}]")
-                    if min_val and max_val:
-                        date_range = {"column": dc, "min": str(min_val), "max": str(max_val)}
-                except Exception:
-                    pass
-
-            info: dict[str, Any] = {
-                "name": filename,
-                "type": "csv",
-                "rows": row_count,
-                "columns": col_info,
-                "sample": sample,
-            }
-            if date_range:
-                info["date_range"] = date_range
-            tables_info.append(info)
-
-        elif filename.endswith(".md"):
+        if filename.endswith(".md"):
             content = get_document(scenario_id, filename)
             if content is None:
                 tables_info.append({"name": filename, "status": "not_found"})
@@ -255,6 +208,38 @@ def describe_tables(scenario_id: str, agent: str) -> str:
                 "size_chars": len(content),
                 "preview": content[:300] + ("..." if len(content) > 300 else ""),
             })
+            continue
+
+        if table_exists(scenario_id, filename):
+            schema = get_table_schema(scenario_id, filename)
+            col_info = [{"name": s["name"], "dtype": s["type"]} for s in schema]
+            row_count = get_table_row_count(scenario_id, filename)
+            sample = get_sample_rows(scenario_id, filename, 2)
+
+            # Date range detection
+            date_cols = [s["name"] for s in schema if any(kw in s["name"].lower() for kw in ("date", "timestamp", "created_at", "_at"))]
+            date_range = None
+            if date_cols:
+                dc = date_cols[0]
+                try:
+                    min_val = query_value(scenario_id, f"SELECT MIN([{dc}]) FROM [{filename}]")
+                    max_val = query_value(scenario_id, f"SELECT MAX([{dc}]) FROM [{filename}]")
+                    if min_val and max_val:
+                        date_range = {"column": dc, "min": str(min_val), "max": str(max_val)}
+                except Exception:
+                    pass
+
+            info: dict[str, Any] = {
+                "name": filename,
+                "type": "table",
+                "rows": row_count,
+                "columns": col_info,
+                "sample": sample,
+                "distinct_value_previews": get_distinct_value_previews(scenario_id, filename),
+            }
+            if date_range:
+                info["date_range"] = date_range
+            tables_info.append(info)
         else:
             tables_info.append({"name": filename, "type": "unknown"})
 
@@ -271,7 +256,7 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
         "function": {
             "name": "query_table",
             "description": (
-                "Query a CSV table with optional filtering, grouping, and aggregation. "
+                "Query a database table with optional filtering, grouping, and aggregation. "
                 "Use this for any data analysis: trends, breakdowns, comparisons, counts, etc. "
                 "You can call this multiple times to investigate from different angles."
             ),
@@ -280,7 +265,7 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
                 "properties": {
                     "table": {
                         "type": "string",
-                        "description": "CSV filename to query (e.g. 'orders.csv', 'payments.csv')",
+                        "description": "Database table to query (e.g. 'orders', 'payments')",
                     },
                     "columns": {
                         "type": "array",

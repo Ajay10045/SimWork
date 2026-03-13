@@ -7,25 +7,25 @@ scenarios/<scenario_id>/tables/. This module defines those access rules.
 from __future__ import annotations
 
 
-# Which table files each agent role can access
+# Which database tables/documents each agent role can access
 AGENT_TABLE_ACCESS: dict[str, list[str]] = {
     "analyst": [
-        "orders.csv",
-        "payments.csv",
-        "sessions_events.csv",
-        "users.csv",
+        "orders",
+        "payments",
+        "sessions_events",
+        "users",
     ],
     "ux_researcher": [
-        "reviews.csv",
-        "support_tickets.csv",
+        "reviews",
+        "support_tickets",
         "usability_study.md",
-        "ux_changelog.csv",
+        "ux_changelog",
     ],
     "engineering_lead": [
-        "deployments.csv",
-        "service_metrics.csv",
+        "deployments",
+        "service_metrics",
         "system_architecture.md",
-        "payment_errors_summary.csv",
+        "payment_errors_summary",
     ],
 }
 

@@ -32,7 +32,7 @@ def test_simple_question_can_be_answered_with_single_query():
             {
                 "question_understanding": "Find the earliest customer signup.",
                 "complexity": "single_query",
-                "target_tables": ["users.csv"],
+                "target_tables": ["users"],
                 "stop_condition": "Once the earliest signup row is found.",
                 "next_steps": ["Ask for the earliest completed order too."],
             },
@@ -50,7 +50,7 @@ def test_simple_question_can_be_answered_with_single_query():
 
     assert result["artifacts"]
     assert result["artifacts"][0]["kind"] == "table"
-    assert result["citations"][0]["source"] == "users.csv"
+    assert result["citations"][0]["source"] == "users"
     assert result["next_steps"] == ["Ask for the earliest completed order too."]
     assert "earliest signup" in result["response"].lower()
 
@@ -61,7 +61,7 @@ def test_agent_retries_after_invalid_query_and_then_succeeds():
             {
                 "question_understanding": "Check payment failures after the migration.",
                 "complexity": "multi_step",
-                "target_tables": ["payments.csv", "orders.csv"],
+                "target_tables": ["payments", "orders"],
                 "stop_condition": "Once payment failures are tied to completed-order impact.",
                 "next_steps": [],
             },
@@ -92,8 +92,8 @@ def test_agent_retries_after_invalid_query_and_then_succeeds():
     assert result["artifacts"]
     assert result["artifacts"][0]["kind"] == "chart"
     assert any("unauthorized table access" in warning.lower() or "no such table" in warning.lower() for warning in result["warnings"])
-    assert "payments.csv" in result["citations"][0]["source"]
-    assert "orders.csv" in result["citations"][0]["source"]
+    assert "payments" in result["citations"][0]["source"]
+    assert "orders" in result["citations"][0]["source"]
 
 
 def test_agent_can_join_multiple_allowed_tables_within_role_scope():
@@ -102,7 +102,7 @@ def test_agent_can_join_multiple_allowed_tables_within_role_scope():
             {
                 "question_understanding": "Find the first customer who also placed the first completed order.",
                 "complexity": "multi_step",
-                "target_tables": ["users.csv", "orders.csv"],
+                "target_tables": ["users", "orders"],
                 "stop_condition": "Once the earliest signup linked to the earliest completed order is identified.",
                 "next_steps": [],
             },
@@ -131,8 +131,8 @@ def test_agent_can_join_multiple_allowed_tables_within_role_scope():
 
     assert result["artifacts"]
     assert result["artifacts"][0]["kind"] == "table"
-    assert "users.csv" in result["citations"][0]["source"]
-    assert "orders.csv" in result["citations"][0]["source"]
+    assert "users" in result["citations"][0]["source"]
+    assert "orders" in result["citations"][0]["source"]
 
 
 def test_agent_querying_other_roles_tables_fails_cleanly():
@@ -141,7 +141,7 @@ def test_agent_querying_other_roles_tables_fails_cleanly():
             {
                 "question_understanding": "Look for support-ticket complaints.",
                 "complexity": "single_query",
-                "target_tables": ["orders.csv"],
+                "target_tables": ["orders"],
                 "stop_condition": "Stop when the ticket pattern is found.",
                 "next_steps": [],
             },
@@ -168,7 +168,7 @@ def test_shared_context_is_available_to_later_agent_turns():
             "query": "Did anything change in payments around January 10?",
             "response": "A RupeeFlow deployment appears around that date.",
             "artifacts": [{"title": "Deployment timeline"}],
-            "citations": [{"title": "Deployments", "source": "deployments.csv"}],
+            "citations": [{"title": "Deployments", "source": "deployments"}],
         }
     ]
     llm = StubLLM(
@@ -176,7 +176,7 @@ def test_shared_context_is_available_to_later_agent_turns():
             {
                 "question_understanding": "Check whether order decline lines up with the engineering finding.",
                 "complexity": "single_query",
-                "target_tables": ["orders.csv"],
+                "target_tables": ["orders"],
                 "stop_condition": "Once order decline timing is confirmed.",
                 "next_steps": [],
             },
@@ -209,7 +209,7 @@ def test_planner_receives_schema_and_sample_rows():
             {
                 "question_understanding": "Inspect spending patterns.",
                 "complexity": "single_query",
-                "target_tables": ["orders.csv"],
+                "target_tables": ["orders"],
                 "stop_condition": "Once one valid row is found.",
                 "next_steps": [],
             },
@@ -228,8 +228,308 @@ def test_planner_receives_schema_and_sample_rows():
     planner_payload = llm.calls[0][2]
     assert '"schema"' in planner_payload
     assert '"sample_rows"' in planner_payload
+    assert '"distinct_value_previews"' in planner_payload
     assert '"total_amount"' in planner_payload
     assert '"order_id"' in planner_payload
+
+
+def test_planner_receives_distinct_user_type_values():
+    llm = StubLLM(
+        json_responses=[
+            {
+                "question_understanding": "Trend orders for power users.",
+                "complexity": "single_query",
+                "target_tables": ["users", "orders"],
+                "stop_condition": "Once the filtered trend query is prepared.",
+                "next_steps": [],
+            },
+            {
+                "action": "finish",
+                "reason": "This test only validates metadata context.",
+                "title": "Final answer",
+                "answer_mode": "text",
+            },
+        ],
+        text_response="Using the users.user_type metadata.",
+    )
+
+    route_query(llm, "checkout_conversion_drop", "analyst", "plot the trend of orders placed by power users")
+
+    planner_payload = llm.calls[0][2]
+    assert '"user_type"' in planner_payload
+    assert '"power"' in planner_payload
+
+
+def test_ambiguous_question_returns_single_clarifying_question():
+    llm = StubLLM(
+        json_responses=[
+            {
+                "question_understanding": "Determine what the user means by most valuable customer.",
+                "complexity": "single_query",
+                "target_tables": ["orders", "users"],
+                "stop_condition": "Clarify the metric first.",
+                "next_steps": [],
+                "needs_clarification": True,
+                "clarification_reason": "I need to know which metric should define customer value before I rank customers.",
+                "pending_follow_up": {
+                    "prompt": "How should I define most valuable customer?",
+                    "choices": ["Highest total spend", "Highest order frequency", "Highest average order value"],
+                    "default_choice": "Highest total spend",
+                    "resolved_query_template": "{original_question} by {choice}",
+                    "allow_free_text": True,
+                },
+            }
+        ],
+        text_response="",
+    )
+
+    result = route_query(llm, "checkout_conversion_drop", "analyst", "most valuable customer")
+
+    assert result["artifacts"] == []
+    assert result["pending_follow_up"] is not None
+    assert result["pending_follow_up"]["prompt"] == "How should I define most valuable customer?"
+    assert "highest total spend" in result["response"].lower()
+
+
+def test_choice_based_clarification_reply_resumes_investigation():
+    history = [
+        {
+            "agent": "analyst",
+            "query": "most valuable customer",
+            "response": "How should I define most valuable customer?",
+            "artifacts": [],
+            "citations": [],
+            "warnings": [],
+            "planner": {
+                "original_query": "most valuable customer",
+                "effective_query": "most valuable customer",
+                "pending_follow_up": {
+                    "prompt": "How should I define most valuable customer?",
+                    "choices": ["Highest total spend", "Highest order frequency"],
+                    "default_choice": "Highest total spend",
+                    "resolved_query_template": "{original_question} by {choice}",
+                    "allow_free_text": True,
+                },
+                "clarification_count": 1,
+                "clarification_history": [],
+            },
+        }
+    ]
+    llm = StubLLM(
+        json_responses=[
+            {
+                "question_understanding": "Rank customers by total spend.",
+                "complexity": "single_query",
+                "target_tables": ["orders"],
+                "stop_condition": "Once the top spender is found.",
+                "next_steps": [],
+            },
+            {
+                "action": "sql",
+                "sql": (
+                    "SELECT user_id, SUM(total_amount) AS total_spent "
+                    "FROM [orders] "
+                    "GROUP BY user_id "
+                    "ORDER BY total_spent DESC"
+                ),
+                "title": "Top customer by spend",
+                "answer_mode": "metric",
+            },
+        ],
+        text_response="The top customer by total spend is shown in the result.",
+    )
+
+    result = route_query(
+        llm,
+        "checkout_conversion_drop",
+        "analyst",
+        "Highest total spend",
+        conversation_history=history,
+    )
+
+    planner_payload = llm.calls[0][2]
+    assert "most valuable customer by Highest total spend" in planner_payload
+    assert result["pending_follow_up"] is None
+    assert result["artifacts"]
+
+
+def test_free_text_clarification_reply_resumes_investigation():
+    history = [
+        {
+            "agent": "analyst",
+            "query": "most valuable customer",
+            "response": "How should I define most valuable customer?",
+            "artifacts": [],
+            "citations": [],
+            "warnings": [],
+            "planner": {
+                "original_query": "most valuable customer",
+                "effective_query": "most valuable customer",
+                "pending_follow_up": {
+                    "prompt": "How should I define most valuable customer?",
+                    "choices": ["Highest total spend", "Highest order frequency"],
+                    "default_choice": "Highest total spend",
+                    "resolved_query_template": "{original_question} with metric {choice}",
+                    "allow_free_text": True,
+                },
+                "clarification_count": 1,
+                "clarification_history": [],
+            },
+        }
+    ]
+    llm = StubLLM(
+        json_responses=[
+            {
+                "question_understanding": "Rank customers by spend on completed orders only.",
+                "complexity": "single_query",
+                "target_tables": ["orders"],
+                "stop_condition": "Once the top spender is found.",
+                "next_steps": [],
+            },
+            {
+                "action": "finish",
+                "reason": "This test only validates free-text clarification propagation.",
+                "title": "Final answer",
+                "answer_mode": "text",
+            },
+        ],
+        text_response="Using the user's clarification about completed-order spending.",
+    )
+
+    result = route_query(
+        llm,
+        "checkout_conversion_drop",
+        "analyst",
+        "total spend on completed orders only",
+        conversation_history=history,
+    )
+
+    planner_payload = llm.calls[0][2]
+    assert "total spend on completed orders only" in planner_payload
+    assert any("free-text clarification" in warning.lower() for warning in result["warnings"])
+
+
+def test_agent_can_ask_second_clarifying_question_if_needed():
+    history = [
+        {
+            "agent": "analyst",
+            "query": "most valuable customer",
+            "response": "How should I define most valuable customer?",
+            "artifacts": [],
+            "citations": [],
+            "warnings": [],
+            "planner": {
+                "original_query": "most valuable customer",
+                "effective_query": "most valuable customer",
+                "pending_follow_up": {
+                    "prompt": "How should I define most valuable customer?",
+                    "choices": ["Highest total spend", "Highest order frequency"],
+                    "default_choice": "Highest total spend",
+                    "resolved_query_template": "{original_question} by {choice}",
+                    "allow_free_text": True,
+                },
+                "clarification_count": 1,
+                "clarification_history": [],
+            },
+        }
+    ]
+    llm = StubLLM(
+        json_responses=[
+            {
+                "question_understanding": "Need to know whether to include cancelled orders.",
+                "complexity": "single_query",
+                "target_tables": ["orders"],
+                "stop_condition": "Clarify order status scope.",
+                "next_steps": [],
+                "needs_clarification": True,
+                "clarification_reason": "I still need to know whether to include only completed orders or all orders.",
+                "pending_follow_up": {
+                    "prompt": "Should I use only completed orders or all orders?",
+                    "choices": ["Completed orders only", "All orders"],
+                    "default_choice": "Completed orders only",
+                    "resolved_query_template": "{original_question} using {choice}",
+                    "allow_free_text": True,
+                },
+            }
+        ],
+        text_response="",
+    )
+
+    result = route_query(
+        llm,
+        "checkout_conversion_drop",
+        "analyst",
+        "Highest total spend",
+        conversation_history=history,
+    )
+
+    assert result["pending_follow_up"] is not None
+    assert result["_planner"]["clarification_count"] == 2
+    assert "completed orders" in result["response"].lower()
+
+
+def test_agent_stops_asking_after_clarification_cap():
+    history = [
+        {
+            "agent": "analyst",
+            "query": "most valuable customer",
+            "response": "Previous clarification",
+            "artifacts": [],
+            "citations": [],
+            "warnings": [],
+            "planner": {
+                "original_query": "most valuable customer",
+                "effective_query": "most valuable customer using total spend",
+                "pending_follow_up": {
+                    "prompt": "Another clarification?",
+                    "choices": ["Yes", "No"],
+                    "default_choice": "Yes",
+                    "resolved_query_template": "{original_question} with {choice}",
+                    "allow_free_text": True,
+                },
+                "clarification_count": 3,
+                "clarification_history": [{"prompt": "q1", "answer": "a1"}, {"prompt": "q2", "answer": "a2"}, {"prompt": "q3", "answer": "a3"}],
+            },
+        }
+    ]
+    llm = StubLLM(
+        json_responses=[
+            {
+                "question_understanding": "Still asks for clarification, but should be blocked by cap.",
+                "complexity": "single_query",
+                "target_tables": ["orders"],
+                "stop_condition": "Proceed with the best interpretation.",
+                "next_steps": [],
+                "needs_clarification": True,
+                "clarification_reason": "Another clarification would normally help.",
+                "pending_follow_up": {
+                    "prompt": "Should I include only completed orders?",
+                    "choices": ["Yes", "No"],
+                    "default_choice": "Yes",
+                    "resolved_query_template": "{original_question} using {choice}",
+                    "allow_free_text": True,
+                },
+            },
+            {
+                "action": "finish",
+                "reason": "Proceed with the best interpretation after the clarification cap.",
+                "title": "Final answer",
+                "answer_mode": "text",
+            },
+        ],
+        text_response="The clarification limit was reached, so I proceeded with the best available interpretation.",
+    )
+
+    result = route_query(
+        llm,
+        "checkout_conversion_drop",
+        "analyst",
+        "yes",
+        conversation_history=history,
+    )
+
+    assert result["pending_follow_up"] is None
+    assert any("clarification limit reached" in warning.lower() for warning in result["warnings"])
 
 
 def test_scoped_sql_executor_rejects_unauthorized_tables():
@@ -244,7 +544,7 @@ def test_scoped_sql_executor_rejects_unauthorized_tables():
     assert "unauthorized table access" in result["error"].lower()
 
 
-def test_scoped_sql_executor_accepts_csv_style_table_names():
+def test_scoped_sql_executor_rejects_csv_style_table_names():
     result = execute_authorized_select(
         scenario_id="checkout_conversion_drop",
         sql="SELECT user_id, SUM(total_amount) AS total_spent FROM [orders.csv] GROUP BY user_id ORDER BY total_spent DESC",
@@ -252,8 +552,8 @@ def test_scoped_sql_executor_accepts_csv_style_table_names():
         max_rows=5,
     )
 
-    assert result["ok"] is True
-    assert result["referenced_tables"] == ["orders"]
+    assert result["ok"] is False
+    assert "unauthorized table access" in result["error"].lower()
 
 
 def test_scoped_sql_executor_handles_trailing_semicolon_when_appending_limit():
@@ -274,7 +574,7 @@ def test_repeated_failed_attempts_end_with_bounded_failure_message():
             {
                 "question_understanding": "Try to answer from invalid queries only.",
                 "complexity": "multi_step",
-                "target_tables": ["orders.csv"],
+                "target_tables": ["orders"],
                 "stop_condition": "Stop if nothing works.",
                 "next_steps": [],
             },
