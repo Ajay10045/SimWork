@@ -10,6 +10,7 @@ from pydantic import BaseModel, Field
 from investigation_logger.logger import get_query_history
 from scenario_loader.loader import list_scenarios
 from simulation_engine.engine import (
+    get_challenges,
     get_scenario_details,
     get_session_process_log,
     get_session_status,
@@ -31,6 +32,7 @@ router = APIRouter(prefix="/api/v1")
 class StartSessionRequest(BaseModel):
     candidate_id: str
     scenario_id: str
+    challenge_id: Optional[str] = None
 
 
 class QueryRequest(BaseModel):
@@ -70,7 +72,7 @@ class SubmitRequest(BaseModel):
 @router.post("/sessions/start")
 def api_start_session(req: StartSessionRequest):
     try:
-        return start_session(req.candidate_id, req.scenario_id)
+        return start_session(req.candidate_id, req.scenario_id, req.challenge_id)
     except FileNotFoundError:
         raise HTTPException(status_code=404, detail={"error": "scenario_not_found", "message": f"Scenario '{req.scenario_id}' not found"})
 
@@ -191,3 +193,11 @@ def api_get_score(session_id: str):
 @router.get("/scenarios")
 def api_list_scenarios():
     return {"scenarios": list_scenarios()}
+
+
+@router.get("/scenarios/{scenario_id}/challenges")
+def api_get_challenges(scenario_id: str):
+    try:
+        return get_challenges(scenario_id)
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail={"error": "scenario_not_found", "message": f"Scenario '{scenario_id}' not found"})

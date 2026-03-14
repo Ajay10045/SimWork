@@ -8,7 +8,6 @@ from typing import Any
 
 from agent_router.router import route_query, validate_agent
 from investigation_logger.logger import (
-    clear_all_session_data,
     create_session,
     get_queries_count,
     get_query_history,
@@ -48,18 +47,38 @@ def _get_llm() -> LLMClient:
     return _llm
 
 
-def start_session(candidate_id: str, scenario_id: str) -> dict[str, Any]:
+def start_session(candidate_id: str, scenario_id: str, challenge_id: str | None = None) -> dict[str, Any]:
     scenario = load_scenario(scenario_id)
     session_id = f"session_{uuid.uuid4().hex[:12]}"
-    clear_all_session_data()
-    create_session(session_id, candidate_id, scenario_id)
+    create_session(session_id, candidate_id, scenario_id, challenge_id)
+
+    problem_statement = scenario["problem_statement"]
+    if challenge_id:
+        problem = next((p for p in scenario.get("problems", []) if p["id"] == challenge_id), None)
+        if problem and "challenge_problem_statement" in problem:
+            problem_statement = problem["challenge_problem_statement"]
+
     return {
         "session_id": session_id,
         "scenario_id": scenario_id,
-        "problem_statement": scenario["problem_statement"],
+        "challenge_id": challenge_id,
+        "problem_statement": problem_statement,
         "available_agents": ["analyst", "ux_researcher", "engineering_lead"],
         "time_limit_minutes": DEFAULT_TIME_LIMIT,
     }
+
+
+def get_challenges(scenario_id: str) -> dict[str, Any]:
+    """Return candidate-safe challenge catalog for a scenario."""
+    scenario = load_scenario(scenario_id)
+    challenges = []
+    for problem in scenario.get("problems", []):
+        challenges.append({
+            "id": problem["id"],
+            "challenge_title": problem.get("challenge_title", problem["title"]),
+            "challenge_prompt": problem.get("challenge_prompt", ""),
+        })
+    return {"scenario_id": scenario_id, "challenges": challenges}
 
 
 def get_scenario_details(session_id: str) -> dict[str, Any]:
@@ -68,10 +87,19 @@ def get_scenario_details(session_id: str) -> dict[str, Any]:
         raise ValueError(f"Session not found: {session_id}")
     scenario = load_scenario(session["scenario_id"])
     reference = load_reference(session["scenario_id"])
+
+    problem_statement = scenario["problem_statement"]
+    challenge_id = session.get("challenge_id")
+    if challenge_id:
+        problem = next((p for p in scenario.get("problems", []) if p["id"] == challenge_id), None)
+        if problem and "challenge_problem_statement" in problem:
+            problem_statement = problem["challenge_problem_statement"]
+
     return {
         "scenario_id": scenario["scenario_id"],
         "title": scenario["title"],
-        "problem_statement": scenario["problem_statement"],
+        "challenge_id": challenge_id,
+        "problem_statement": problem_statement,
         "reference_panel": reference,
         "agent_profiles": get_agent_capability_profiles(session["scenario_id"]),
     }

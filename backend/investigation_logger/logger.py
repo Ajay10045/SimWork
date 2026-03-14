@@ -52,6 +52,14 @@ def _ensure_submissions_columns(conn: sqlite3.Connection) -> None:
             conn.execute(f"ALTER TABLE submissions ADD COLUMN {column} {data_type}")
 
 
+def _ensure_sessions_columns(conn: sqlite3.Connection) -> None:
+    wanted: dict[str, str] = {"challenge_id": "TEXT"}
+    existing = _table_columns(conn, "sessions")
+    for column, data_type in wanted.items():
+        if column not in existing:
+            conn.execute(f"ALTER TABLE sessions ADD COLUMN {column} {data_type}")
+
+
 def init_db() -> None:
     """Create tables if they don't exist."""
     conn = _get_conn()
@@ -140,6 +148,7 @@ def init_db() -> None:
     )
     _ensure_query_log_columns(conn)
     _ensure_submissions_columns(conn)
+    _ensure_sessions_columns(conn)
     conn.commit()
     conn.close()
 
@@ -162,15 +171,16 @@ def clear_all_session_data() -> None:
     conn.close()
 
 
-def create_session(session_id: str, candidate_id: str, scenario_id: str) -> None:
+def create_session(session_id: str, candidate_id: str, scenario_id: str, challenge_id: str | None = None) -> None:
     conn = _get_conn()
+    _ensure_sessions_columns(conn)
     conn.execute(
-        "INSERT INTO sessions (session_id, candidate_id, scenario_id, started_at) VALUES (?, ?, ?, ?)",
-        (session_id, candidate_id, scenario_id, _utcnow()),
+        "INSERT INTO sessions (session_id, candidate_id, scenario_id, challenge_id, started_at) VALUES (?, ?, ?, ?, ?)",
+        (session_id, candidate_id, scenario_id, challenge_id, _utcnow()),
     )
     conn.commit()
     conn.close()
-    log_session_event(session_id, "session_started", {"scenario_id": scenario_id})
+    log_session_event(session_id, "session_started", {"scenario_id": scenario_id, "challenge_id": challenge_id})
 
 
 def log_query(

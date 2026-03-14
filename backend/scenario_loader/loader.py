@@ -23,6 +23,11 @@ def list_scenarios() -> list[dict[str, str]]:
                     "id": cfg.get("scenario_id", folder.name),
                     "title": cfg.get("title", folder.name),
                     "difficulty": cfg.get("difficulty", "medium"),
+                    "description": cfg.get("problem_statement", ""),
+                    "scenario_type": cfg.get("scenario_type", "diagnostic"),
+                    "industry": cfg.get("industry"),
+                    "product": cfg.get("product"),
+                    "icon": cfg.get("icon"),
                 }
             )
     return results

@@ -1,21 +1,61 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { startSession } from "@/lib/api";
+import {
+  listScenarios,
+  getChallenges,
+  startSession,
+  type Scenario,
+  type Challenge,
+} from "@/lib/api";
+
+const TYPE_BADGES: Record<string, { label: string; color: string }> = {
+  diagnostic: { label: "Diagnostic", color: "bg-red-500/10 text-red-600 dark:text-red-400" },
+  strategic: { label: "Strategic", color: "bg-amber-500/10 text-amber-600 dark:text-amber-400" },
+};
+
+const FALLBACK_ICON = "assignment";
 
 export default function LandingPage() {
   const router = useRouter();
-  const [loading, setLoading] = useState(false);
+  const [scenarios, setScenarios] = useState<Scenario[]>([]);
+  const [challengeMap, setChallengeMap] = useState<Record<string, string>>({});
+  const [loadingId, setLoadingId] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
-  const handleStart = async () => {
-    setLoading(true);
+  useEffect(() => {
+    listScenarios()
+      .then(async (res) => {
+        setScenarios(res.scenarios);
+        const map: Record<string, string> = {};
+        await Promise.all(
+          res.scenarios.map(async (s) => {
+            try {
+              const ch = await getChallenges(s.id);
+              if (ch.challenges.length > 0) {
+                map[s.id] = ch.challenges[0].id;
+              }
+            } catch {
+              // ignore per-scenario challenge fetch errors
+            }
+          })
+        );
+        setChallengeMap(map);
+      })
+      .catch(() => setError("Failed to load scenarios. Is the backend running?"));
+  }, []);
+
+  const handleStart = async (scenarioId: string) => {
+    const challengeId = challengeMap[scenarioId];
+    if (!challengeId) return;
+    setLoadingId(scenarioId);
     try {
-      const session = await startSession("candidate_default", "checkout_conversion_drop");
+      const session = await startSession("candidate_default", scenarioId, challengeId);
       router.push(`/workspace/${session.session_id}`);
     } catch (err) {
       console.error(err);
-      setLoading(false);
+      setLoadingId(null);
     }
   };
 
@@ -52,106 +92,98 @@ export default function LandingPage() {
 
         {/* Main */}
         <main className="flex-1 max-w-5xl mx-auto w-full px-6 py-12">
+          {/* Hero */}
           <div className="mb-10">
             <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-[#10B981]/10 text-[#10B981] text-xs font-bold uppercase tracking-wider mb-4">
-              <span className="material-symbols-outlined text-sm">trending_down</span>
-              Critical Incident
+              <span className="material-symbols-outlined text-sm">workspace_premium</span>
+              Simulation Scenarios
             </div>
             <h2 className="text-slate-900 dark:text-white text-4xl md:text-5xl font-black leading-tight tracking-tight mb-2">
-              India Food Delivery: <span className="text-[#10B981]">The Checkout Trust Crisis</span>
+              Choose Your <span className="text-[#10B981]">Scenario</span>
             </h2>
-            <p className="text-slate-500 dark:text-slate-400 text-lg">
-              Simulation Module #124 &bull; Strategy &amp; Analytics Focus
+            <p className="text-slate-500 dark:text-slate-400 text-lg max-w-2xl">
+              Select a simulation to begin. Each scenario tests different product management skills using real-world data from ZaikaNow, an India-native food delivery marketplace.
             </p>
           </div>
 
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-            <div className="lg:col-span-2 space-y-6">
-              <div className="overflow-hidden rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xl">
-                <div className="aspect-video w-full bg-slate-100 dark:bg-slate-800 relative group overflow-hidden">
-                  <div className="absolute inset-0 bg-gradient-to-t from-slate-900/80 to-transparent flex items-end p-8 z-10">
-                    <div className="flex items-center gap-4 text-white">
-                      <span className="material-symbols-outlined text-4xl">monitoring</span>
-                      <div>
-                        <p className="text-xs font-bold uppercase opacity-70">Internal Metrics Dashboard</p>
-                        <p className="font-medium">Payment reliability is slipping across top metros</p>
-                      </div>
-                    </div>
-                  </div>
-                  <div className="w-full h-full bg-gradient-to-br from-slate-700 via-slate-800 to-slate-900" />
-                </div>
-                <div className="p-8">
-                  <h3 className="text-slate-900 dark:text-white text-2xl font-bold mb-4 flex items-center gap-3">
-                    <span className="material-symbols-outlined text-[#10B981]">description</span>
-                    The Scenario
-                  </h3>
-                  <p className="text-slate-600 dark:text-slate-300 text-lg leading-relaxed mb-8">
-                    You are the Product Manager for <span className="text-slate-900 dark:text-white font-semibold">ZaikaNow</span>, an India-native food delivery marketplace. Leadership has flagged a late-January slowdown in completed orders across key metros while major competitors continue to hold steady. Your mission is to investigate whether the problem is traffic, checkout conversion, or payment reliability, then present a data-backed recovery plan.
-                  </p>
-                  <div className="flex flex-wrap items-center gap-4">
-                    <button
-                      onClick={handleStart}
-                      disabled={loading}
-                      className="flex items-center justify-center gap-2 rounded-lg h-14 px-8 bg-[#10B981] text-white text-lg font-bold hover:scale-[1.02] transition-transform shadow-lg shadow-[#10B981]/25 disabled:opacity-50"
-                    >
-                      <span>{loading ? "Starting..." : "Start Investigation"}</span>
-                      <span className="material-symbols-outlined">arrow_forward</span>
-                    </button>
-                    <button className="flex items-center justify-center gap-2 rounded-lg h-14 px-6 border border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-300 font-bold hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors">
-                      <span className="material-symbols-outlined">bookmark</span>
-                      <span>Save for later</span>
-                    </button>
-                  </div>
-                </div>
-              </div>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="p-6 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/50">
-                  <span className="material-symbols-outlined text-[#10B981] mb-3">timer</span>
-                  <p className="text-slate-500 dark:text-slate-400 text-sm font-medium">Estimated Duration</p>
-                  <p className="text-slate-900 dark:text-white text-2xl font-bold tracking-tight">30 minutes</p>
-                </div>
-                <div className="p-6 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/50">
-                  <span className="material-symbols-outlined text-[#10B981] mb-3">signal_cellular_alt</span>
-                  <p className="text-slate-500 dark:text-slate-400 text-sm font-medium">Complexity Level</p>
-                  <p className="text-slate-900 dark:text-white text-2xl font-bold tracking-tight">Intermediate</p>
-                </div>
-              </div>
+          {/* Error State */}
+          {error && (
+            <div className="mb-8 p-4 rounded-xl border border-red-200 dark:border-red-800 bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-300 text-sm">
+              {error}
             </div>
+          )}
 
-            <div className="lg:col-span-1 space-y-6">
-              <div className="p-6 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800">
-                <h4 className="text-slate-900 dark:text-white font-bold mb-6 flex items-center gap-2">
-                  <span className="material-symbols-outlined text-[#10B981] text-xl">target</span>
-                  Key Objectives
-                </h4>
-                <ul className="space-y-4">
-                  {["Find the broken payment step", "Segment impact by city, platform, and method", "Separate root cause from red herrings", "Recommend technical and trust-recovery actions"].map((obj) => (
-                    <li key={obj} className="flex items-start gap-3">
-                      <span className="material-symbols-outlined text-green-500 mt-0.5">check_circle</span>
-                      <span className="text-slate-600 dark:text-slate-300 text-sm">{obj}</span>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-              <div className="p-6 rounded-xl bg-[#10B981]/10 border border-[#10B981]/20">
-                <h4 className="text-[#10B981] font-bold mb-2">Sim Tip</h4>
-                <p className="text-slate-600 dark:text-slate-400 text-xs leading-relaxed">
-                  Pay close attention to the <span className="font-bold">support tickets and usability findings</span>. In payment incidents, trust damage can persist even after the technical metrics start to improve.
-                </p>
-              </div>
-              <div className="p-1 rounded-xl bg-gradient-to-br from-[#10B981] via-[#10B981]/50 to-teal-500">
-                <div className="bg-white dark:bg-slate-900 rounded-[calc(0.75rem-4px)] p-6">
-                  <p className="text-slate-900 dark:text-white font-bold text-sm mb-1">Ready to prove your skills?</p>
-                  <p className="text-slate-500 dark:text-slate-400 text-xs mb-4">Start now to appear on the weekly leaderboard.</p>
-                  <div className="flex -space-x-2">
-                    {[1, 2, 3].map((i) => (
-                      <div key={i} className="size-8 rounded-full border-2 border-white dark:border-slate-900 bg-gradient-to-br from-[#10B981] to-teal-500" />
-                    ))}
-                    <div className="size-8 rounded-full border-2 border-white dark:border-slate-900 bg-slate-200 dark:bg-slate-800 flex items-center justify-center text-[10px] font-bold text-slate-500">+12</div>
-                  </div>
-                </div>
+          {/* Loading State */}
+          {scenarios.length === 0 && !error && (
+            <div className="flex items-center justify-center py-20">
+              <div className="flex items-center gap-3 text-slate-400">
+                <span className="material-symbols-outlined animate-spin">progress_activity</span>
+                <span>Loading scenarios...</span>
               </div>
             </div>
+          )}
+
+          {/* Scenario Cards */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-8 mb-12">
+            {scenarios.map((scenario) => {
+              const icon = scenario.icon || FALLBACK_ICON;
+              const badge = TYPE_BADGES[scenario.scenario_type || "diagnostic"] || TYPE_BADGES.diagnostic;
+              const isLoading = loadingId === scenario.id;
+              const isDisabled = loadingId !== null || !challengeMap[scenario.id];
+
+              return (
+                <div
+                  key={scenario.id}
+                  className="group flex flex-col overflow-hidden rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm hover:shadow-xl hover:border-[#10B981]/40 transition-all duration-200"
+                >
+                  {/* Icon Banner */}
+                  <div className="h-36 bg-gradient-to-br from-slate-800 via-slate-900 to-slate-950 flex items-center justify-center relative overflow-hidden">
+                    <div className="absolute inset-0 bg-[#10B981]/5 group-hover:bg-[#10B981]/10 transition-colors" />
+                    <span className="material-symbols-outlined text-6xl text-[#10B981]/60 group-hover:text-[#10B981] transition-colors">
+                      {icon}
+                    </span>
+                  </div>
+
+                  {/* Card Body */}
+                  <div className="flex flex-col flex-1 p-8">
+                    {/* Badge */}
+                    <div className="mb-4">
+                      <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-bold uppercase tracking-wider ${badge.color}`}>
+                        {badge.label}
+                      </span>
+                    </div>
+
+                    <h3 className="text-slate-900 dark:text-white text-2xl font-bold mb-3 tracking-tight">
+                      {scenario.title}
+                    </h3>
+                    <p className="text-slate-500 dark:text-slate-400 text-sm leading-relaxed flex-1 mb-6">
+                      {scenario.description}
+                    </p>
+
+                    {/* Meta */}
+                    <div className="flex items-center gap-4 mb-6 text-xs text-slate-400">
+                      <span className="flex items-center gap-1">
+                        <span className="material-symbols-outlined text-sm">timer</span>
+                        30 min
+                      </span>
+                      <span className="flex items-center gap-1">
+                        <span className="material-symbols-outlined text-sm">groups</span>
+                        3 agents
+                      </span>
+                    </div>
+
+                    <button
+                      onClick={() => handleStart(scenario.id)}
+                      disabled={isDisabled}
+                      className="flex items-center justify-center gap-2 rounded-lg h-12 px-6 bg-[#10B981] text-white text-sm font-bold hover:scale-[1.02] transition-transform shadow-md shadow-[#10B981]/20 disabled:opacity-50 disabled:hover:scale-100"
+                    >
+                      <span>{isLoading ? "Starting..." : "Begin Scenario"}</span>
+                      <span className="material-symbols-outlined text-lg">arrow_forward</span>
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
           </div>
         </main>
 

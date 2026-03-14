@@ -1,70 +1,43 @@
 {
   "scenario_id": "checkout_conversion_drop",
   "title": "Checkout Conversion Drop",
-  "difficulty": "multi_tier",
+  "scenario_type": "diagnostic",
+  "icon": "trending_down",
+  "difficulty": "intermediate",
   "industry": "food_delivery",
   "product": "ZaikaNow",
-  "problem_statement": "Late-January completed orders have softened across key Indian metros while major competitors continue to hold steady. Leadership needs a data-backed explanation and a recovery plan.",
+  "problem_statement": "Completed orders have dropped across key Indian metros since mid-January while competitors hold steady. Leadership needs a data-backed root cause and a recovery plan.",
   "time_limit_minutes": 30,
   "available_agents": ["analyst", "ux_researcher", "engineering_lead"],
   "problems": [
     {
-      "id": "promo_cliff",
-      "difficulty": "easy",
-      "title": "Promo Cliff",
-      "root_cause": "New Year campaign (Dec 26 - Jan 5) drove a ~25% order spike. Volume normalized after the campaign ended, creating an apparent drop that is actually reversion to baseline.",
-      "discovery_path": "Single agent (Analyst). Compare daily order trends against ux_changelog campaign dates.",
+      "id": "order_drop_investigation",
+      "title": "Order Drop Investigation",
+      "challenge_title": "The Order Drop",
+      "challenge_prompt": "Completed orders have dropped across key Indian metros since mid-January. Competitors are holding steady. Find what's causing the decline and propose a recovery plan.",
+      "challenge_problem_statement": "ZaikaNow, an India-native food delivery marketplace, has seen a significant drop in completed orders starting mid-January across Bengaluru, Mumbai, and Delhi NCR. Leadership is concerned — major competitors aren't showing the same decline. Your job is to investigate the root cause using data from analytics, engineering, and user research, then propose an actionable recovery plan.",
+      "root_cause": "The RupeeFlow v3 payment migration on January 10, 2025 degraded UPI confirmation and callback handling. Android users in high-volume metros were hit hardest, causing payment failures, delayed confirmations, and order completion drops. A Feb 1 hotfix partially restored reliability, but trust damage persists among power and returning users who reduced ordering frequency.",
       "key_evidence": [
-        "Orders spike ~25% during Dec 26 - Jan 5, then return to seasonal baseline by Jan 7",
-        "ux_changelog entry: New Year offer rail on home feed (Dec 27)",
-        "Upper-funnel sessions also normalize — demand-side normalization, not failure-side"
-      ],
-      "trap": "Weak candidate blames promo ending for the Jan 10+ payment drop. Strong candidate notices 3-day gap: promo normalizes Jan 7, payment failures start Jan 10.",
-      "tables_involved": ["orders", "funnel_events", "ux_changelog"],
-      "agents_required": ["analyst"]
-    },
-    {
-      "id": "rupeeflow_v3_migration",
-      "difficulty": "medium",
-      "title": "RupeeFlow v3 UPI Migration",
-      "root_cause": "The RupeeFlow v3 migration on January 10, 2025 degraded UPI confirmation and callback handling. Android users in high-volume metros (Bengaluru, Mumbai, Delhi NCR) were hit hardest, leading to payment failures, delayed confirmations, and order completion drops.",
-      "discovery_path": "Requires 2-3 agents. Analyst isolates payment-step funnel break and Android/metro/UPI segment. Engineering Lead connects deployment timeline and payment service latency spike. UX Researcher confirms with support ticket themes and usability study.",
-      "key_evidence": [
-        "Funnel break at payment_attempt to order_complete after Jan 10",
-        "UPI is most affected method; Android + primary metros worst segment",
+        "Funnel break at payment_attempt to order_complete starting Jan 10",
+        "UPI is the most affected payment method; Android + primary metros worst segment",
         "DEP004: Migrated to RupeeFlow v3 on Jan 10",
-        "Payment service p99 latency spikes from 470ms to 2600ms+",
+        "Payment service p99 latency spikes from 490ms to 2685ms on Jan 10",
         "Error codes shift to UPI_CALLBACK_TIMEOUT, BANK_TIMEOUT, PAYMENT_PROVIDER_ERROR",
-        "Support tickets dominated by upi_timeout and money_debited categories",
-        "Usability study: task completion dropped from 93% to 61%"
+        "Support tickets dominated by upi_timeout and callback_delay categories",
+        "Usability study: task completion dropped from 93% to 61%",
+        "Post-hotfix (Feb 1): technical metrics improve but order volumes remain depressed",
+        "Reviews show trust damage: users ordering less, shifting to competitors",
+        "Platform mix shifts: Android share drops, web share rises"
       ],
       "red_herrings_to_reject": [
-        "Promo normalization (resolves by Jan 7, not Jan 10)",
-        "Search service p99 spike (Jan 8, resolves immediately)",
+        "New Year promo normalization (resolves by Jan 7, 3-day gap before payment failures start Jan 10)",
+        "Search service p99 spike (Jan 8, resolves immediately, unrelated to checkout)",
         "Republic Day promo (late Jan, merchandizing not payments)",
-        "Notification service errors (Jan 20-22, unrelated to payments)",
-        "Checkout success animation (Jan 10, too minor for this scale)"
+        "Notification service errors (Jan 20-22, communication channel, not payment flow)",
+        "Checkout success animation (Jan 10, cosmetic change, insufficient scale)"
       ],
-      "tables_involved": ["orders", "payments", "funnel_events", "deployments", "service_metrics", "payment_errors_summary", "support_tickets", "reviews"],
+      "tables_involved": ["users", "orders", "payments", "funnel_events", "deployments", "service_metrics", "payment_errors_summary", "support_tickets", "reviews", "ux_changelog"],
       "agents_required": ["analyst", "engineering_lead", "ux_researcher"]
-    },
-    {
-      "id": "trust_erosion_cascade",
-      "difficulty": "hard",
-      "title": "Trust Erosion Cascade",
-      "root_cause": "After the Feb 1 hotfix partially restored payment reliability, power and returning users on Android in primary metros continued to order less frequently. This is behavioral trust damage — not a technical failure. Payment metrics improved but business impact persists through reduced ordering frequency and platform switching.",
-      "discovery_path": "All three agents plus sophisticated cohort reasoning. Analyst must segment by user_type AND time phase to see power/returning users show elevated cancellation and fewer orders. Engineering confirms technical recovery. UX Researcher surfaces trust damage from reviews and usability study.",
-      "key_evidence": [
-        "Order volume from affected cohort (power/returning + Android + primary metros) drops ~20% in trust phase despite technical fix",
-        "Platform mix shifts: Android share drops 62% to 56%, web rises 20% to 26%",
-        "Power/returning Android users in primary metros: 15% cancellation rate vs 10% baseline",
-        "Reviews mention ordering less, shifting to Swiggy, only using for specific restaurants",
-        "Funnel: returning/power Android users browse less (restaurant_view 70% vs 77% baseline)",
-        "Usability study recommends tracking repeat-order drop among affected customers"
-      ],
-      "why_hard": "Technical metrics look recovered. Signal is in behavioral/cohort data requiring user_type segmentation, temporal phase analysis, and qualitative trust themes. Must reason about second-order effects.",
-      "tables_involved": ["orders", "users", "funnel_events", "reviews", "support_tickets"],
-      "agents_required": ["analyst", "ux_researcher", "engineering_lead"]
     }
   ],
   "data_model": {
@@ -178,7 +151,6 @@
   },
   "expected_investigation_path": [
     "orders_trend_analysis",
-    "promo_vs_incident_timeline_separation",
     "checkout_funnel_breakdown",
     "city_platform_segment_analysis",
     "payment_method_review",
@@ -189,24 +161,21 @@
     "trust_damage_assessment"
   ],
   "expected_key_findings": [
-    "Order volume spikes ~25% during New Year campaign (Dec 26 - Jan 5) and normalizes by Jan 7 — this is demand reversion, not a failure",
-    "A separate, sharper drop begins Jan 10 affecting the payment step specifically",
+    "A sharp drop in completed orders begins Jan 10 affecting the payment step specifically",
     "The largest funnel break occurs from payment attempt to order completion",
     "Android users in Bengaluru, Mumbai, and Delhi NCR show the sharpest degradation",
     "UPI is the most affected payment method and the main driver of failed confirmations",
-    "RupeeFlow v3 migration on January 10 aligns closely with the reliability decline",
-    "Payment service p99 latency spikes sharply after the migration while other core services remain mostly stable",
+    "RupeeFlow v3 migration (DEP004) on January 10 aligns with the reliability decline",
+    "Payment service p99 latency spikes from 490ms to 2685ms after the migration",
     "Payment error mix shifts toward UPI_CALLBACK_TIMEOUT, BANK_TIMEOUT, and PAYMENT_PROVIDER_ERROR",
-    "Early-February mitigations improve technical metrics but do not fully restore order frequency",
-    "Support tickets and reviews show trust damage: users mention money debited, unclear confirmation, and switching apps",
-    "Power and returning users on Android in primary metros show elevated cancellation rates even after technical recovery",
-    "Platform mix shifts post-incident: Android share drops while web share rises — users migrating away from failing platform",
-    "Repeat-order behavior remains soft in impacted cohorts even after partial mitigation — behavioral trust damage, not technical"
+    "Support tickets and reviews confirm user-facing impact: UPI timeouts, money debited without confirmation",
+    "Feb 1 hotfix improves technical metrics but order frequency remains depressed",
+    "Power and returning users on Android show elevated cancellation and reduced ordering — trust damage persists"
   ],
   "red_herrings": [
     {
       "signal": "New Year campaign caused a visible demand spike from late December into early January",
-      "why_misleading": "Traffic normalization after the campaign is real, but it resolves by Jan 7 and does not explain the payment-step degradation that starts on January 10. A 3-day gap separates the two events."
+      "why_misleading": "Traffic normalization after the campaign is real, but it resolves by Jan 7 and does not explain the payment-step degradation that starts on January 10."
     },
     {
       "signal": "Search service p99 latency spikes on January 8",
@@ -214,7 +183,7 @@
     },
     {
       "signal": "Republic Day promo and homepage rail changes launch in late January",
-      "why_misleading": "They can distract candidates toward merchandizing explanations, but the sharper reliability break is already visible in payments."
+      "why_misleading": "They can distract toward merchandizing explanations, but the reliability break is in payments."
     },
     {
       "signal": "Notification service errors rise briefly on January 20-22",
@@ -222,15 +191,15 @@
     },
     {
       "signal": "Checkout success animation ships on January 10",
-      "why_misleading": "It is adjacent in time but not strong enough to explain the scale and persistence of the payment degradation."
+      "why_misleading": "Adjacent in time but too minor to explain the scale and persistence of the payment degradation."
     }
   ],
   "evaluation_rubric": {
     "root_cause_identification": {
       "weight": 0.35,
       "levels": {
-        "excellent": "Identifies the RupeeFlow v3 migration as the root cause, explains the UPI confirmation regression, links it to Android-heavy metro impact, AND distinguishes the promo cliff from the technical failure",
-        "good": "Identifies the payment gateway issue and the UPI / city pattern, but may not frame the full causal chain or separate promo normalization from the incident",
+        "excellent": "Identifies the RupeeFlow v3 migration as the root cause, explains the UPI confirmation regression, links it to Android-heavy metro impact, and recognizes that trust damage persists after the hotfix",
+        "good": "Identifies the payment gateway issue and the UPI/city pattern, but may not fully explain the post-fix trust damage",
         "adequate": "Identifies the payment step as the main problem but does not isolate the migration or affected segment cleanly",
         "poor": "Blames weaker factors such as promos ending, search ranking, or general traffic decline"
       }
@@ -238,10 +207,10 @@
     "investigation_methodology": {
       "weight": 0.25,
       "levels": {
-        "excellent": "Systematically queries all three agents, cross-references conflicting clues, rejects red herrings, and explains the incident, the promo normalization, and downstream trust effects as distinct phenomena",
+        "excellent": "Systematically queries all three agents, cross-references evidence across domains, rejects red herrings with reasoning, and builds a coherent timeline",
         "good": "Uses multiple agents and connects the main technical and UX evidence",
         "adequate": "Explores some evidence but misses important cross-functional links or timeline logic",
-        "poor": "Relies on a single domain or reaches a conclusion without strong evidence"
+        "poor": "Relies on a single agent or reaches a conclusion without sufficient evidence"
       }
     },
     "solution_quality": {
@@ -256,7 +225,7 @@
     "communication": {
       "weight": 0.15,
       "levels": {
-        "excellent": "Frames the problem for leadership with business impact, affected metros, customer trust risk, and a clear recovery narrative — separates the promo cliff from the real problem",
+        "excellent": "Frames the problem for leadership with business impact, affected segments, customer trust risk, and a clear recovery narrative",
         "good": "Provides a clear summary with supporting evidence",
         "adequate": "Explains the issue but with limited prioritization or synthesis",
         "poor": "Communicates in a fragmented way or dumps disconnected observations"
