@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any, Literal, Optional
 
 from fastapi import APIRouter, HTTPException
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
 from investigation_logger.logger import get_query_history
@@ -19,6 +20,7 @@ from simulation_engine.engine import (
     handle_get_score,
     handle_log_event,
     handle_query,
+    handle_query_stream,
     handle_remove_evidence,
     handle_save_evidence,
     handle_score_session,
@@ -90,6 +92,21 @@ def api_get_scenario(session_id: str):
 def api_query_agent(session_id: str, req: QueryRequest):
     try:
         return handle_query(session_id, req.agent, req.query, input_mode=req.input_mode)
+    except ValueError as exc:
+        msg = str(exc)
+        if "Invalid agent" in msg:
+            raise HTTPException(status_code=400, detail={"error": "invalid_agent", "message": msg})
+        raise HTTPException(status_code=404, detail={"error": "invalid_session", "message": msg})
+
+
+@router.post("/sessions/{session_id}/query/stream")
+async def api_query_agent_stream(session_id: str, req: QueryRequest):
+    try:
+        return StreamingResponse(
+            handle_query_stream(session_id, req.agent, req.query, input_mode=req.input_mode),
+            media_type="text/event-stream",
+            headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+        )
     except ValueError as exc:
         msg = str(exc)
         if "Invalid agent" in msg:

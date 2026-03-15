@@ -422,11 +422,12 @@ def order_status_probs(current: datetime, platform: str, city: str, user_type: s
     return fail_rate, cancel_rate
 
 
-def generate_orders(users, restaurants, restaurant_menu_map, menu_items, drivers, completed_sessions):
-    """Generate one order per completed funnel session, with order_items inline.
+def generate_orders(users, restaurants, restaurant_menu_map, menu_items, drivers, completed_sessions, failed_sessions):
+    """Generate orders from both completed and failed funnel sessions.
 
-    Every order maps 1:1 to a completed session. total_amount is computed from
-    actual menu_item prices × quantities (order_items generated here).
+    Completed sessions produce orders with status determined by order_status_probs.
+    Failed sessions (reached payment_attempt but not order_complete) always produce
+    failed orders — these represent payment attempts that never succeeded.
     """
     print("Generating orders...")
     user_lookup = {u[0]: {"platform": u[7], "city": u[4], "user_type": u[8]} for u in users}
@@ -453,12 +454,13 @@ def generate_orders(users, restaurants, restaurant_menu_map, menu_items, drivers
         current = s["date"]
         phase = phase_for_date(current)
 
-        # Hard problem: trust-damaged cohort drops 20% of orders
+        fail_rate, cancel_rate = order_status_probs(current, platform, city, user_type)
+
+        # Hard problem: trust-damaged cohort cancels 20% of orders
         if phase == "trust_damage" and user_type in {"returning", "power"} and platform == "android" and city_is_primary(city):
             if random.random() < 0.20:
-                continue
-
-        fail_rate, cancel_rate = order_status_probs(current, platform, city, user_type)
+                cancel_rate = 1.0  # force this order to be cancelled
+                fail_rate = 0.0
         r = random.random()
         if r < fail_rate:
             status = "failed"
@@ -493,6 +495,33 @@ def generate_orders(users, restaurants, restaurant_menu_map, menu_items, drivers
         order_rows.append([
             order_id_str, user_id, restaurant_id, driver_id, s["session_id"],
             status, f"{total_amount:.2f}", s["timestamp"].strftime("%Y-%m-%d %H:%M:%S"),
+        ])
+        order_id += 1
+
+    # Failed sessions: payment was attempted but never succeeded → always "failed" orders
+    for s in failed_sessions:
+        user_id = s["user_id"]
+        city = s["city"]
+        current = s["date"]
+
+        restaurant_id = random.choice(restaurants_by_city[city])
+        order_id_str = f"ORD{order_id:06d}"
+        menu_ids = restaurant_menu_map.get(restaurant_id, [])
+        if menu_ids:
+            k = weighted_choice([1, 2, 3, 4], [15, 42, 31, 12])
+            selected_items = random.sample(menu_ids, k=min(k, len(menu_ids)))
+        else:
+            selected_items = []
+        total_amount = 0.0
+        for item_id in selected_items:
+            quantity = weighted_choice([1, 2, 3], [72, 23, 5])
+            total_amount += item_price[item_id] * quantity
+            oi_rows.append([f"OI{oi_id:06d}", order_id_str, item_id, quantity])
+            oi_id += 1
+
+        order_rows.append([
+            order_id_str, user_id, restaurant_id, "", s["session_id"],
+            "failed", f"{total_amount:.2f}", s["timestamp"].strftime("%Y-%m-%d %H:%M:%S"),
         ])
         order_id += 1
 
@@ -686,6 +715,7 @@ def generate_funnel_events(users):
     print("Generating funnel_events...")
     rows = []
     completed_sessions = []  # Sessions that reached order_complete
+    failed_sessions = []     # Sessions that reached payment_attempt but NOT order_complete
     users_by_platform = {p: [u for u in users if u[7] == p] for p in PLATFORMS}
     user_lookup = {u[0]: {"city": u[4], "user_type": u[8]} for u in users}
     event_id = 1
@@ -734,6 +764,7 @@ def generate_funnel_events(users):
 
             session_id_str = f"S{session_id:07d}"
             reached_complete = False
+            reached_payment = False
             for idx, step in enumerate(steps):
                 if idx > 0 and random.random() > probs[idx]:
                     break
@@ -743,19 +774,24 @@ def generate_funnel_events(users):
                     platform, device, app_version, timestamp.strftime("%Y-%m-%d %H:%M:%S"),
                 ])
                 event_id += 1
+                if step == "payment_attempt":
+                    reached_payment = True
                 if step == "order_complete":
                     reached_complete = True
 
+            session_info = {
+                "session_id": session_id_str,
+                "user_id": user_id,
+                "platform": platform,
+                "city": city,
+                "user_type": user_type,
+                "timestamp": timestamp,
+                "date": current,
+            }
             if reached_complete:
-                completed_sessions.append({
-                    "session_id": session_id_str,
-                    "user_id": user_id,
-                    "platform": platform,
-                    "city": city,
-                    "user_type": user_type,
-                    "timestamp": timestamp,
-                    "date": current,
-                })
+                completed_sessions.append(session_info)
+            elif reached_payment:
+                failed_sessions.append(session_info)
 
             session_id += 1
 
@@ -766,7 +802,7 @@ def generate_funnel_events(users):
         ["event_id", "user_id", "session_id", "event_type", "platform", "device", "app_version", "timestamp"],
         rows,
     )
-    return rows, completed_sessions
+    return rows, completed_sessions, failed_sessions
 
 
 # ---------------------------------------------------------------------------
@@ -1247,8 +1283,8 @@ def main():
     restaurants = generate_restaurants()
     menu_items, restaurant_menu_map = generate_menu_items(restaurants)
     drivers = generate_drivers()
-    _, completed_sessions = generate_funnel_events(users)
-    orders, order_items, user_lookup = generate_orders(users, restaurants, restaurant_menu_map, menu_items, drivers, completed_sessions)
+    _, completed_sessions, failed_sessions = generate_funnel_events(users)
+    orders, order_items, user_lookup = generate_orders(users, restaurants, restaurant_menu_map, menu_items, drivers, completed_sessions, failed_sessions)
     payments = generate_payments(orders, user_lookup)
     generate_reviews(orders)
     generate_support_tickets(users, orders)

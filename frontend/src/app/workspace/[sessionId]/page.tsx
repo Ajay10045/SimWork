@@ -9,7 +9,7 @@ import {
   getScenarioDetails,
   getSessionStatus,
   logSessionEvent,
-  queryAgent,
+  queryAgentStream,
   removeEvidence,
   saveEvidence,
   updateEvidenceAnnotation,
@@ -313,8 +313,10 @@ function getLabelTickIndices(total: number, maxTicks = 6) {
 function shortenDateLabel(label: string): string {
   const m = label.match(/^(\d{4})-(\d{2})(?:-(\d{2}))?/);
   if (!m) return label;
+  const monthNum = parseInt(m[2], 10);
   const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-  const monthName = months[parseInt(m[2], 10) - 1] || m[2];
+  if (monthNum < 1 || monthNum > 12) return label; // not a valid date (e.g. week number)
+  const monthName = months[monthNum - 1];
   if (m[3]) return `${monthName} ${parseInt(m[3], 10)}`;
   return `${monthName} '${m[1].slice(2)}`;
 }
@@ -329,26 +331,18 @@ function LineChart({ artifact }: { artifact: Extract<Artifact, { kind: "chart" }
   const padTop = 12;
   const padBottom = 38;
 
-  // Detect if dual axis is needed (scales differ by >10x)
+  // Dual Y-axis only for multi-measure charts (different columns) with significantly different scales
   const seriesMaxes = artifact.series.map((s) => Math.max(...s.values, 1));
   const overallMax = Math.max(...seriesMaxes);
   const overallMin = Math.min(...seriesMaxes);
-  const needsDualAxis = artifact.series.length >= 2 && overallMax / Math.max(overallMin, 1) > 10;
+  const needsDualAxis = artifact.multi_measure === true
+    && artifact.series.length >= 2
+    && overallMax / Math.max(overallMin, 1) > 10;
 
   const padRight = needsDualAxis ? 52 : 16;
   const plotWidth = width - padLeft - padRight;
   const plotHeight = height - padTop - padBottom;
 
-  // Split series into primary (left) and secondary (right) axis groups
-  const threshold = overallMax / 5;
-  const primaryIndices = needsDualAxis
-    ? artifact.series.map((_, i) => i).filter((i) => seriesMaxes[i] >= threshold)
-    : artifact.series.map((_, i) => i);
-  const secondaryIndices = needsDualAxis
-    ? artifact.series.map((_, i) => i).filter((i) => seriesMaxes[i] < threshold)
-    : [];
-
-  // Compute axis scales
   function axisScale(indices: number[]) {
     const vals = indices.flatMap((i) => artifact.series[i].values);
     const rMax = Math.max(...vals, 1);
@@ -357,6 +351,14 @@ function LineChart({ artifact }: { artifact: Extract<Artifact, { kind: "chart" }
     const rng = rMax - mn || 1;
     return { min: mn, max: rMax, range: rng };
   }
+
+  const threshold = overallMax / 5;
+  const primaryIndices = needsDualAxis
+    ? artifact.series.map((_, i) => i).filter((i) => seriesMaxes[i] >= threshold)
+    : artifact.series.map((_, i) => i);
+  const secondaryIndices = needsDualAxis
+    ? artifact.series.map((_, i) => i).filter((i) => seriesMaxes[i] < threshold)
+    : [];
 
   const primary = axisScale(primaryIndices);
   const secondary = secondaryIndices.length > 0 ? axisScale(secondaryIndices) : primary;
@@ -396,14 +398,15 @@ function LineChart({ artifact }: { artifact: Extract<Artifact, { kind: "chart" }
                 x={padLeft - 6}
                 y={y + 4}
                 textAnchor="end"
-                className="fill-slate-500 text-[10px]"
+                fontSize={10}
+                className="fill-slate-500"
               >
                 {formatChartAxisValue(tickValue, artifact.unit)}
               </text>
             </g>
           );
         })}
-        {/* Secondary (right) Y-axis */}
+        {/* Secondary (right) Y-axis — only for multi-measure charts */}
         {secondaryTicks.map((tickValue, index) => {
           const y = yForValue(tickValue, secondary);
           return (
@@ -412,7 +415,8 @@ function LineChart({ artifact }: { artifact: Extract<Artifact, { kind: "chart" }
                 x={width - padRight + 6}
                 y={y + 4}
                 textAnchor="start"
-                className="fill-slate-400 text-[10px]"
+                fontSize={10}
+                className="fill-slate-400"
               >
                 {formatChartAxisValue(tickValue, artifact.unit)}
               </text>
@@ -464,7 +468,8 @@ function LineChart({ artifact }: { artifact: Extract<Artifact, { kind: "chart" }
                 x={x}
                 y={height - padBottom + 16}
                 textAnchor="middle"
-                className="fill-slate-500 text-[8px]"
+                fontSize={8}
+                className="fill-slate-500"
               >
                 {shortenDateLabel(artifact.labels[index])}
               </text>
@@ -646,6 +651,8 @@ function QueryLogModal({
                           <span className={`size-5 rounded-full flex items-center justify-center text-[10px] font-bold ${
                             attempt.status === "success"
                               ? "bg-emerald-500/15 text-emerald-500"
+                              : attempt.status === "rejected"
+                              ? "bg-amber-500/15 text-amber-500"
                               : "bg-red-500/15 text-red-500"
                           }`}>
                             {attempt.attempt || i + 1}
@@ -663,6 +670,19 @@ function QueryLogModal({
                         {attempt.error && (
                           <p className="mt-2 text-[11px] text-red-500">{attempt.error}</p>
                         )}
+                        {attempt.rejection_reason ? (
+                          <div className="mt-2 rounded bg-amber-500/10 border border-amber-500/20 p-2">
+                            <p className="text-[11px] text-amber-600 dark:text-amber-400 font-medium">Critic: {String(attempt.rejection_reason)}</p>
+                            {attempt.suggested_fix ? (
+                              <p className="mt-1 text-[11px] text-amber-500/80 dark:text-amber-400/70">Fix: {String(attempt.suggested_fix)}</p>
+                            ) : null}
+                          </div>
+                        ) : null}
+                        {attempt.critic_ok && !attempt.rejection_reason && attempt.critic_reason ? (
+                          <div className="mt-2 rounded bg-emerald-500/10 border border-emerald-500/20 p-2">
+                            <p className="text-[11px] text-emerald-600 dark:text-emerald-400 font-medium">Critic: {String(attempt.critic_reason)}</p>
+                          </div>
+                        ) : null}
                         {attempt.summary && (
                           <p className="mt-2 text-[11px] text-slate-500 dark:text-slate-400">{attempt.summary}</p>
                         )}
@@ -692,8 +712,33 @@ function QueryLogModal({
   );
 }
 
+function computeWeekEnd(dateStr: string): string | null {
+  const m = dateStr.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!m) return null;
+  const d = new Date(parseInt(m[1]), parseInt(m[2]) - 1, parseInt(m[3]));
+  if (d.getDay() !== 1) return null; // not a Monday
+  const end = new Date(d);
+  end.setDate(end.getDate() + 6);
+  return end.toISOString().slice(0, 10);
+}
+
+function isWeeklyDateSeries(labels: string[]): boolean {
+  if (labels.length < 2) return false;
+  // Check first few labels are Mondays ~7 days apart
+  let count = 0;
+  for (let i = 0; i < Math.min(labels.length, 3); i++) {
+    if (computeWeekEnd(labels[i]) !== null) count++;
+  }
+  return count >= 2;
+}
+
 function ChartDataTable({ artifact }: { artifact: Extract<Artifact, { kind: "chart" }> }) {
-  const columns = [artifact.labels.length > 0 ? "Label" : "", ...artifact.series.map((s) => s.name)];
+  const weekly = isWeeklyDateSeries(artifact.labels);
+  const columns = [
+    artifact.labels.length > 0 ? "Week Start" : "",
+    ...(weekly ? ["Week End"] : []),
+    ...artifact.series.map((s) => s.name),
+  ];
   return (
     <div className="max-h-52 overflow-auto rounded-lg border border-slate-200 dark:border-slate-700/50">
       <table className="w-full text-[11px]">
@@ -710,6 +755,9 @@ function ChartDataTable({ artifact }: { artifact: Extract<Artifact, { kind: "cha
           {artifact.labels.map((label, i) => (
             <tr key={`${label}-${i}`} className="border-t border-slate-100 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/50">
               <td className="px-3 py-1 text-slate-500 whitespace-nowrap">{label}</td>
+              {weekly && (
+                <td className="px-3 py-1 text-slate-500 whitespace-nowrap">{computeWeekEnd(label) ?? "—"}</td>
+              )}
               {artifact.series.map((s) => (
                 <td key={s.name} className="px-3 py-1 font-mono text-slate-700 dark:text-slate-300 text-right whitespace-nowrap">
                   {s.values[i] != null ? s.values[i].toLocaleString() : "—"}
@@ -895,6 +943,7 @@ export default function WorkspacePage() {
   const [agentGuidance, setAgentGuidance] = useState<Record<string, AgentGuidance>>({});
   const [input, setInput] = useState("");
   const [isQuerying, setIsQuerying] = useState(false);
+  const [agentStatus, setAgentStatus] = useState("");
   const [status, setStatus] = useState<SessionStatus | null>(null);
   const [scenarioDetail, setScenarioDetail] = useState<ScenarioDetail | null>(null);
   const [timeLeft, setTimeLeft] = useState("30:00");
@@ -1011,8 +1060,13 @@ export default function WorkspacePage() {
     const now = new Date().toISOString();
     setMessages((prev) => [...prev, { id: `pending-user-${now}`, role: "user", content: query, agent: selectedAgent, timestamp: now }]);
     setIsQuerying(true);
+    setAgentStatus("");
     try {
-      const result = await queryAgent(sessionId, selectedAgent, query, inputMode);
+      const result = await queryAgentStream(
+        sessionId, selectedAgent, query,
+        (_stage, detail) => setAgentStatus(detail),
+        inputMode,
+      );
       const timestamp = new Date().toISOString();
       setMessages((prev) => [
         ...prev,
@@ -1044,6 +1098,7 @@ export default function WorkspacePage() {
       ]);
     } finally {
       setIsQuerying(false);
+      setAgentStatus("");
     }
   }, [isQuerying, selectedAgent, sessionId]);
 
@@ -1292,15 +1347,19 @@ export default function WorkspacePage() {
               </div>
             ))}
             {isQuerying && (
-              <div className="flex gap-2.5 items-center">
+              <div className="flex gap-2.5 items-start">
                 <AgentIcon agent={selectedAgent} />
-                <div className="flex items-center gap-2 animate-pulse">
-                  <span className="text-xs text-slate-500">{selectedAgentInfo.label} is analyzing evidence</span>
-                  <span className="flex gap-0.5">
-                    <span className="size-1 bg-slate-500 rounded-full animate-bounce" style={{ animationDelay: "0ms" }} />
-                    <span className="size-1 bg-slate-500 rounded-full animate-bounce" style={{ animationDelay: "150ms" }} />
-                    <span className="size-1 bg-slate-500 rounded-full animate-bounce" style={{ animationDelay: "300ms" }} />
-                  </span>
+                <div className="flex flex-col gap-1">
+                  <div className="flex items-center gap-2 animate-pulse">
+                    <span className="text-xs text-slate-500">
+                      {agentStatus || `${selectedAgentInfo.label} is analyzing evidence`}
+                    </span>
+                    <span className="flex gap-0.5">
+                      <span className="size-1 bg-slate-500 rounded-full animate-bounce" style={{ animationDelay: "0ms" }} />
+                      <span className="size-1 bg-slate-500 rounded-full animate-bounce" style={{ animationDelay: "150ms" }} />
+                      <span className="size-1 bg-slate-500 rounded-full animate-bounce" style={{ animationDelay: "300ms" }} />
+                    </span>
+                  </div>
                 </div>
               </div>
             )}

@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import logging
 import uuid
-from typing import Any
+from typing import Any, Callable
 
 from data_layer.db import (
     execute_authorized_select,
@@ -25,7 +25,7 @@ logger = logging.getLogger(__name__)
 
 MAX_HISTORY_ITEMS = 12
 MAX_INVESTIGATION_ATTEMPTS = 4
-MAX_TABLE_RESULT_ROWS = 12
+MAX_TABLE_RESULT_ROWS = 200
 MAX_CHART_RESULT_ROWS = 10000
 MAX_CLARIFICATION_QUESTIONS = 3
 
@@ -48,9 +48,10 @@ PLAN_SCHEMA = {
 }
 
 ACTION_SCHEMA = {
-    "action": "sql | document | finish",
+    "action": "sql | python | document | finish",
     "reason": "Short rationale",
-    "sql": "Read-only SQL query when action is sql",
+    "sql": "Read-only SQL query when action is sql or python",
+    "python_code": "Pandas code when action is python. Operates on df (DataFrame from sql). Must assign result = <final DataFrame>. Only pd (pandas) and np (numpy) are available.",
     "document": "Allowed markdown source name when action is document",
     "document_terms": ["Optional search terms for document excerpts"],
     "title": "Human-friendly title for the resulting evidence",
@@ -69,10 +70,15 @@ def route_query(
     agent: str,
     query: str,
     conversation_history: list[dict[str, Any]] | None = None,
+    status_callback: Callable[[dict[str, str]], None] | None = None,
 ) -> dict[str, Any]:
     """Plan an investigation, execute scoped queries, and synthesize the answer."""
     validate_agent(agent)
     history = conversation_history or []
+
+    def _emit(stage: str, detail: str = "") -> None:
+        if status_callback:
+            status_callback({"stage": stage, "detail": detail})
 
     role = get_agent_role_config(scenario_id, agent)
     source_metadata = _build_source_metadata(
@@ -87,6 +93,7 @@ def route_query(
     effective_query = clarification_resolution["effective_query"] or query
     clarification_history = clarification_resolution["clarification_history"]
 
+    _emit("planning", "Understanding your question and planning investigation...")
     plan, plan_warning = _plan_investigation(
         llm=llm,
         agent=agent,
@@ -133,6 +140,7 @@ def route_query(
             "_attempts": [],
         }
 
+    _emit("investigating", "Starting data investigation...")
     evidence, attempts, warnings = _run_investigation_loop(
         llm=llm,
         scenario_id=scenario_id,
@@ -142,6 +150,7 @@ def route_query(
         plan=plan,
         source_metadata=source_metadata,
         conversation_context=conversation_context,
+        status_callback=status_callback,
     )
     warnings = warnings_seed + warnings
     if plan_warning:
@@ -149,6 +158,7 @@ def route_query(
     if clarification_resolution.get("note"):
         warnings.append(clarification_resolution["note"])
 
+    _emit("synthesizing", "Composing final answer...")
     artifacts, citations = _build_artifacts_and_citations(evidence, agent)
     response = _synthesize_response(
         llm=llm,
@@ -236,13 +246,19 @@ def _run_investigation_loop(
     plan: dict[str, Any],
     source_metadata: list[dict[str, Any]],
     conversation_context: list[dict[str, Any]],
+    status_callback: Callable[[dict[str, str]], None] | None = None,
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[str]]:
     warnings: list[str] = []
     attempts: list[dict[str, Any]] = []
     evidence: list[dict[str, Any]] = []
     allowed_sql_tables = set(role.get("allowed_tables", []))
 
+    def _emit(stage: str, detail: str = "") -> None:
+        if status_callback:
+            status_callback({"stage": stage, "detail": detail})
+
     for attempt_no in range(1, MAX_INVESTIGATION_ATTEMPTS + 1):
+        _emit("choosing_action", f"Attempt {attempt_no}: selecting next action...")
         action, action_warning = _choose_next_action(
             llm=llm,
             agent=agent,
@@ -262,13 +278,22 @@ def _run_investigation_loop(
             break
 
         if action_type == "document":
+            _emit("searching_docs", f"Searching documents: {action.get('title', '')}")
             record = _execute_document_step(
                 scenario_id=scenario_id,
                 action=action,
                 allowed_sources=role.get("allowed_documents", []),
                 query=query,
             )
+        elif action_type == "python":
+            _emit("executing_python", f"Running pandas analysis: {action.get('title', '')}")
+            record = _execute_python_step(
+                scenario_id=scenario_id,
+                action=action,
+                allowed_sql_tables=allowed_sql_tables,
+            )
         else:
+            _emit("executing_sql", f"Running SQL query: {action.get('title', '')}")
             record = _execute_sql_step(
                 scenario_id=scenario_id,
                 action=action,
@@ -279,6 +304,24 @@ def _run_investigation_loop(
         attempts.append(record)
 
         if record["status"] == "success" and record.get("rows"):
+            # Critic check — validate result quality before accepting
+            _emit("critic_review", f"Checking query quality (attempt {attempt_no})...")
+            is_ok, rejection_reason, suggested_fix = _critic_check(
+                llm=llm, query=query, action=action, record=record, plan=plan
+            )
+            # Always record critic feedback on the attempt record
+            record["critic_ok"] = is_ok
+            if rejection_reason:
+                record["critic_reason"] = rejection_reason
+            if suggested_fix:
+                record["critic_fix"] = suggested_fix
+            if not is_ok:
+                record["status"] = "rejected"
+                record["rejection_reason"] = rejection_reason
+                record["suggested_fix"] = suggested_fix
+                _emit("critic_rejected", f"Critic rejected: {(rejection_reason or '')[:100]}")
+                continue
+
             evidence.append(
                 {
                     "evidence_id": f"ev_{uuid.uuid4().hex[:8]}",
@@ -329,6 +372,15 @@ def _choose_next_action(
         "If the user mentioned a segment or category that might match a low-cardinality column, check metadata or run a small discovery query before asking for clarification. "
         "For trend or time-series questions, use answer_mode=chart and query the full available date range unless the user explicitly asks for a narrower window. "
         "Do not add arbitrary recent-day limits to trend queries. "
+        "For weekly aggregations in SQLite, always use strftime('%Y-%m-%d', date_col, 'weekday 0', '-6 days') "
+        "to get the Monday (week start) date, and GROUP BY that expression. "
+        "Do NOT use strftime('%W') or strftime('%Y-W%W') as these create duplicates at year boundaries. "
+        "Use action=python when the question requires transformations SQL cannot easily express: "
+        "rolling averages, percentiles, percentage-of-total, complex pivots, multi-step reshaping. "
+        "When using action=python, provide BOTH sql (to fetch raw data) and python_code (pandas transformation). "
+        "The python_code receives a DataFrame called `df` and must assign the final result to `result`. "
+        "Only pd (pandas) and np (numpy) are available. "
+        "For simple aggregations, filtering, or joins, prefer action=sql. "
         "If you already have enough evidence, return action=finish. "
         "Return JSON only."
     )
@@ -400,6 +452,148 @@ def _execute_sql_step(
         "rows": result["rows"],
         "truncated": result["truncated"],
     }
+
+
+def _execute_python_step(
+    scenario_id: str,
+    action: dict[str, Any],
+    allowed_sql_tables: set[str],
+) -> dict[str, Any]:
+    """Execute SQL to fetch data, then apply pandas transformation."""
+    from .sandbox import execute_pandas_code
+
+    sql = str(action.get("sql") or "").strip()
+    python_code = str(action.get("python_code") or "").strip()
+
+    # Step 1: run SQL through existing validated pipeline
+    sql_result = execute_authorized_select(
+        scenario_id=scenario_id,
+        sql=sql,
+        allowed_tables=allowed_sql_tables,
+        max_rows=MAX_CHART_RESULT_ROWS,  # fetch more rows for pandas to work with
+    )
+    if not sql_result["ok"]:
+        return {
+            "status": "error",
+            "kind": "python",
+            "title": action.get("title") or "Python attempt",
+            "answer_mode": action.get("answer_mode", "table"),
+            "sql": sql,
+            "python_code": python_code,
+            "error": f"SQL step failed: {sql_result['error']}",
+            "sources": sql_result.get("referenced_tables", []),
+            "columns": [],
+            "rows": [],
+            "truncated": False,
+        }
+
+    # Step 2: convert SQL result to DataFrame
+    import pandas as pd
+
+    df = pd.DataFrame(sql_result["rows"], columns=sql_result["columns"])
+
+    # Step 3: run pandas code in sandbox
+    sandbox_result = execute_pandas_code(python_code, df)
+    if not sandbox_result["ok"]:
+        return {
+            "status": "error",
+            "kind": "python",
+            "title": action.get("title") or "Python attempt",
+            "answer_mode": action.get("answer_mode", "table"),
+            "sql": sql,
+            "python_code": python_code,
+            "error": f"Pandas step failed: {sandbox_result['error']}",
+            "sources": sql_result.get("referenced_tables", []),
+            "columns": sql_result["columns"],
+            "rows": sql_result["rows"],
+            "truncated": sql_result["truncated"],
+        }
+
+    return {
+        "status": "success",
+        "kind": "python",
+        "title": action.get("title") or "Python result",
+        "answer_mode": action.get("answer_mode", "table"),
+        "sql": sql,
+        "python_code": python_code,
+        "sources": sql_result.get("referenced_tables", []),
+        "columns": sandbox_result["columns"],
+        "rows": sandbox_result["rows"],
+        "truncated": sandbox_result["truncated"],
+    }
+
+
+def _critic_check(
+    llm: LLMClient,
+    query: str,
+    action: dict[str, Any],
+    record: dict[str, Any],
+    plan: dict[str, Any],
+) -> tuple[bool, str | None, str | None]:
+    """Review SQL/Python code for correctness before accepting results as evidence.
+
+    Returns (is_acceptable, rejection_reason, suggested_fix).
+    """
+    columns = record.get("columns", [])
+    sql = record.get("sql") or action.get("sql") or ""
+
+    system = (
+        "You are a SQL/code quality reviewer. Given a user question and the SQL query "
+        "(and optional Python/pandas code) that was generated to answer it, determine if "
+        "the code is logically correct.\n\n"
+        "Only reject if there is a CLEAR, SPECIFIC error such as:\n"
+        "- Syntax errors in SQL or Python code\n"
+        "- Wrong GROUP BY granularity (e.g., daily when weekly was asked, or vice versa)\n"
+        "- Missing or incorrect JOIN conditions that would produce wrong results\n"
+        "- Filters that exclude data the user explicitly asked about\n"
+        "- Week grouping using strftime('%W') or '%Y-W%W' instead of week-start dates\n"
+        "- Aggregation errors (e.g., SUM when COUNT was needed)\n\n"
+        "Do NOT reject for stylistic preferences, minor optimizations, or speculative issues.\n"
+        "When in doubt, mark it acceptable. The bar for rejection should be high — "
+        "only reject when the query will produce WRONG results for the user's question.\n\n"
+        "Respond with JSON only: {\"acceptable\": true/false, \"reason\": \"...\", \"suggested_fix\": \"...\"}"
+    )
+
+    payload = {
+        "question": query,
+        "sql": sql,
+        "python_code": record.get("python_code") or action.get("python_code") or "",
+        "answer_mode": record.get("answer_mode", "table"),
+        "columns": columns,
+        "plan_context": plan.get("question_understanding", ""),
+    }
+
+    def _normalize_critic(value: dict[str, Any]) -> dict[str, Any]:
+        return {
+            "acceptable": bool(value.get("acceptable", True)),
+            "reason": str(value.get("reason") or "").strip(),
+            "suggested_fix": str(value.get("suggested_fix") or "").strip(),
+        }
+
+    try:
+        result, error = _chat_json(
+            llm=llm,
+            system=system,
+            payload=payload,
+            normalize=_normalize_critic,
+            purpose="result critic",
+        )
+        if result is None:
+            # If critic call fails, accept the result (don't block on critic errors)
+            logger.warning("Critic check failed: %s — accepting result", error)
+            return True, None, None
+
+        if result["acceptable"]:
+            logger.info("Critic accepted: SQL looks correct for question")
+            return True, None, None
+
+        reason = result["reason"] or "Result quality issue detected"
+        fix = result["suggested_fix"] or None
+        logger.info("Critic rejected: %s | Suggested fix: %s", reason, fix)
+        return False, reason, fix
+    except Exception as exc:
+        logger.warning("Critic check exception: %s — accepting result", exc)
+        return True, None, None
 
 
 def _execute_document_step(
@@ -542,6 +736,8 @@ def _role_system_prompt(agent: str, role: dict[str, Any]) -> str:
         "Before asking for clarification, inspect the provided schema, sample rows, distinct categorical values, "
         "and, if needed, use a small discovery query to resolve the ambiguity from the database. "
         "For trend or time-series questions, use the full available date range from the metadata unless the user explicitly asks for a narrower window. "
+        "For weekly aggregations, use strftime('%Y-%m-%d', date_col, 'weekday 0', '-6 days') to get week-start dates and GROUP BY that. "
+        "Never use strftime('%W') or '%Y-W%W' for weekly grouping as they break at year boundaries. "
         "Stay within evidence from your allowed sources only."
     )
 
@@ -630,8 +826,11 @@ def _normalize_action(action: dict[str, Any], plan: dict[str, Any], source_metad
     allowed_sources = {item["name"] for item in source_metadata}
     raw_document_terms = action.get("document_terms") or []
     action_type = str(action.get("action") or "sql").strip().lower()
-    if action_type not in {"sql", "document", "finish"}:
+    if action_type not in {"sql", "python", "document", "finish"}:
         action_type = "sql"
+    python_code = str(action.get("python_code") or "").strip()
+    if action_type == "python" and not python_code:
+        action_type = "sql"  # fall back if no code provided
     answer_mode = str(action.get("answer_mode") or "table").strip().lower()
     if answer_mode not in {"metric", "chart", "table", "text"}:
         answer_mode = "table"
@@ -642,6 +841,7 @@ def _normalize_action(action: dict[str, Any], plan: dict[str, Any], source_metad
         "action": action_type,
         "reason": str(action.get("reason") or "").strip(),
         "sql": str(action.get("sql") or "").strip(),
+        "python_code": python_code,
         "document": document,
         "document_terms": [str(term).strip() for term in raw_document_terms if str(term).strip()][:3],
         "title": str(action.get("title") or "").strip() or "Investigation result",
@@ -713,7 +913,7 @@ def _artifact_from_evidence(item: dict[str, Any], citation_id: str, agent: str) 
             "card_variant": "table",
             "summary": item["summary"],
         }
-    if rows and len(columns) >= 2 and numeric_columns and (answer_mode == "chart" or len(rows) <= 12):
+    if rows and len(columns) >= 2 and numeric_columns and (answer_mode == "chart" or len(rows) <= 30):
         label_column = next((col for col in columns if col not in numeric_columns), columns[0])
         value_columns = [col for col in numeric_columns if col != label_column]
         if not value_columns:
@@ -739,8 +939,9 @@ def _artifact_from_evidence(item: dict[str, Any], citation_id: str, agent: str) 
                     cat = str(row.get(category_column, ""))
                     pivoted[lbl][cat] = float(row.get(val_col, 0) or 0)
                 chart_type = "line" if _looks_like_time_column(rows, label_column) else "bar"
+                label_order = _normalize_week_labels(label_order)
                 series = [
-                    {"name": cat, "values": [pivoted[lbl][cat] for lbl in label_order]}
+                    {"name": cat, "values": [pivoted[lbl][cat] for lbl in pivoted]}
                     for cat in categories
                 ]
                 from agent_router.downsample import downsample_chart
@@ -751,6 +952,7 @@ def _artifact_from_evidence(item: dict[str, Any], citation_id: str, agent: str) 
                     "chart_type": chart_type,
                     "labels": label_order,
                     "series": series,
+                    "multi_measure": False,
                     "citation_ids": [citation_id],
                     "purpose": "supporting_evidence",
                     "display_mode": "board_default",
@@ -761,7 +963,7 @@ def _artifact_from_evidence(item: dict[str, Any], citation_id: str, agent: str) 
                 }
 
         chart_type = "line" if _looks_like_time_column(rows, label_column) else "bar"
-        labels_list = [str(row.get(label_column, "")) for row in rows]
+        labels_list = _normalize_week_labels([str(row.get(label_column, "")) for row in rows])
         series = [
             {"name": col, "values": [float(row.get(col, 0) or 0) for row in rows]}
             for col in value_columns
@@ -774,6 +976,7 @@ def _artifact_from_evidence(item: dict[str, Any], citation_id: str, agent: str) 
             "chart_type": chart_type,
             "labels": labels_list,
             "series": series,
+            "multi_measure": len(value_columns) > 1,
             "citation_ids": [citation_id],
             "purpose": "supporting_evidence",
             "display_mode": "board_default",
@@ -870,6 +1073,44 @@ def _summarize_attempt(record: dict[str, Any]) -> str:
         preview = ", ".join(f"{key}={value}" for key, value in list(rows[0].items())[:3])
         return f"{title} returned 1 row from {sources}: {preview}."
     return f"{title} returned {len(rows)} rows from {sources}."
+
+
+def _normalize_week_labels(labels: list[str]) -> list[str]:
+    """Convert week-number labels (e.g. '2024-40') to week-start dates (e.g. '2024-09-30').
+
+    Handles both ISO weeks (1-53) and strftime %W weeks (0-53).
+    Also handles 'YYYY-WNN' format.  Leaves non-week labels unchanged.
+    """
+    import re
+    from datetime import date, timedelta, datetime
+
+    normalized: list[str] = []
+    for label in labels:
+        # Match "2024-40" or "2024-W40" patterns
+        m = re.match(r"^(\d{4})-W?(\d{1,2})$", label)
+        if m:
+            year, week = int(m.group(1)), int(m.group(2))
+            # Try ISO week first (1-53)
+            if 1 <= week <= 53:
+                try:
+                    d = date.fromisocalendar(year, week, 1)
+                    normalized.append(d.isoformat())
+                    continue
+                except ValueError:
+                    pass
+            # Fall back to strftime %W style (0-53, Monday-based)
+            if 0 <= week <= 53:
+                try:
+                    # %W: week 0 = days before first Monday, week 1 = first Monday
+                    d = datetime.strptime(f"{year}-W{week:02d}-1", "%Y-W%W-%w").date()
+                    if d.weekday() != 0:  # ensure Monday
+                        d = d - timedelta(days=d.weekday())
+                    normalized.append(d.isoformat())
+                    continue
+                except ValueError:
+                    pass
+        normalized.append(label)
+    return normalized
 
 
 def _looks_like_time_column(rows: list[dict[str, Any]], column: str) -> bool:

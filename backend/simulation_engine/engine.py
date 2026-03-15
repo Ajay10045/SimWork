@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import asyncio
+import json as _json
 import uuid
 from datetime import datetime, timezone
-from typing import Any
+from typing import Any, AsyncGenerator, Callable
 
 from agent_router.router import route_query, validate_agent
 from investigation_logger.logger import (
@@ -106,7 +108,13 @@ def get_scenario_details(session_id: str) -> dict[str, Any]:
     }
 
 
-def handle_query(session_id: str, agent: str, query: str, input_mode: str = "typed") -> dict[str, Any]:
+def handle_query(
+    session_id: str,
+    agent: str,
+    query: str,
+    input_mode: str = "typed",
+    status_callback: Callable[[dict[str, str]], None] | None = None,
+) -> dict[str, Any]:
     session = get_session(session_id)
     if session is None:
         raise ValueError(f"Session not found: {session_id}")
@@ -121,6 +129,7 @@ def handle_query(session_id: str, agent: str, query: str, input_mode: str = "typ
         agent=agent,
         query=query,
         conversation_history=history[-20:] if history else None,
+        status_callback=status_callback,
     )
     planner = result.pop("_planner", None)
     attempts = result.pop("_attempts", None)
@@ -149,6 +158,47 @@ def handle_query(session_id: str, agent: str, query: str, input_mode: str = "typ
         **result,
         "query_log_id": query_log_id,
     }
+
+
+async def handle_query_stream(
+    session_id: str,
+    agent: str,
+    query: str,
+    input_mode: str = "typed",
+) -> AsyncGenerator[str, None]:
+    """SSE generator that yields status events during query processing."""
+    queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue()
+
+    def status_callback(event: dict[str, str]) -> None:
+        queue.put_nowait(event)
+
+    loop = asyncio.get_event_loop()
+    future = loop.run_in_executor(
+        None,
+        lambda: handle_query(session_id, agent, query, input_mode, status_callback),
+    )
+
+    while True:
+        # Drain any queued status events
+        while not queue.empty():
+            try:
+                event = queue.get_nowait()
+                yield f"data: {_json.dumps(event)}\n\n"
+            except asyncio.QueueEmpty:
+                break
+        if future.done():
+            # Drain remaining events
+            while not queue.empty():
+                try:
+                    event = queue.get_nowait()
+                    yield f"data: {_json.dumps(event)}\n\n"
+                except asyncio.QueueEmpty:
+                    break
+            # Yield final result
+            result = future.result()
+            yield f"data: {_json.dumps({'stage': 'complete', 'result': result})}\n\n"
+            break
+        await asyncio.sleep(0.1)
 
 
 def handle_log_event(session_id: str, event_type: str, event_payload: dict[str, Any] | None = None) -> dict[str, Any]:
