@@ -213,14 +213,19 @@
           ]
         },
         {
-          "name": "payment_errors_summary",
+          "name": "error_log",
           "type": "table",
-          "description": "Aggregated payment error patterns — useful for understanding reliability by payment method.",
+          "description": "Row-per-error detail log across services — useful for understanding reliability by service and payment method.",
           "fields": [
-            { "name": "date", "type": "date", "description": "Error date." },
-            { "name": "error_code", "type": "string", "description": "Payment error code." },
-            { "name": "count", "type": "int", "description": "Number of occurrences." },
-            { "name": "payment_method", "type": "enum", "description": "Payment method: upi / credit_card / debit_card / wallet." }
+            { "name": "error_id", "type": "string", "description": "Primary key." },
+            { "name": "timestamp", "type": "datetime", "description": "Error timestamp." },
+            { "name": "session_id", "type": "string", "description": "Session identifier (empty for non-order errors)." },
+            { "name": "order_id", "type": "string", "description": "Order identifier (empty for non-order errors)." },
+            { "name": "service", "type": "string", "description": "Service: payment_service / search_service / notification_service." },
+            { "name": "error_code", "type": "string", "description": "Error code." },
+            { "name": "payment_method", "type": "string", "description": "Payment method (only for payment_service errors)." },
+            { "name": "platform", "type": "enum", "description": "Platform: ios / android / web." },
+            { "name": "severity", "type": "enum", "description": "critical / high / medium / low." }
           ]
         },
         {

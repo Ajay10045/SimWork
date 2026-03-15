@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import {
   getQueryHistory,
+  getQueryLogDetail,
   getSavedEvidence,
   getScenarioDetails,
   getSessionStatus,
@@ -15,6 +16,7 @@ import {
   type Artifact,
   type Citation,
   type PendingFollowUp,
+  type QueryLogDetail,
   type QueryHistoryItem,
   type ReferencePanel,
   type SavedEvidence,
@@ -308,23 +310,39 @@ function getLabelTickIndices(total: number, maxTicks = 6) {
   return Array.from(indices).sort((left, right) => left - right).slice(0, maxTicks);
 }
 
+function shortenDateLabel(label: string): string {
+  const m = label.match(/^(\d{4})-(\d{2})(?:-(\d{2}))?/);
+  if (!m) return label;
+  const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+  const monthName = months[parseInt(m[2], 10) - 1] || m[2];
+  if (m[3]) return `${monthName} ${parseInt(m[3], 10)}`;
+  return `${monthName} '${m[1].slice(2)}`;
+}
+
 function LineChart({ artifact }: { artifact: Extract<Artifact, { kind: "chart" }> }) {
   if (artifact.labels.length < 2) return <BarChart artifact={artifact} />;
-  const palette = ["#10B981", "#38BDF8", "#F59E0B", "#A855F7"];
-  const flattened = artifact.series.flatMap((item) => item.values);
-  const max = Math.max(...flattened, 1);
-  const min = Math.min(...flattened, 0);
-  const range = max - min || 1;
-  const width = 360;
-  const height = 180;
-  const padLeft = 42;
-  const padRight = 12;
+  const palette = ["#10B981", "#38BDF8", "#F59E0B", "#A855F7", "#EC4899", "#EF4444"];
+  const isDense = artifact.labels.length > 60;
+  const width = isDense ? 600 : 360;
+  const height = isDense ? 220 : 180;
+  const padLeft = 48;
+  const padRight = 16;
   const padTop = 12;
-  const padBottom = 34;
+  const padBottom = 38;
   const plotWidth = width - padLeft - padRight;
   const plotHeight = height - padTop - padBottom;
+
+  const flattened = artifact.series.flatMap((item) => item.values);
+  const rawMax = Math.max(...flattened, 1);
+  const rawMin = Math.min(...flattened, 0);
+  const min = rawMin > 0 ? 0 : rawMin;
+  const max = rawMax;
+  const range = max - min || 1;
+
   const yTicks = Array.from({ length: 5 }, (_, index) => min + ((4 - index) / 4) * range);
-  const labelTickIndices = getLabelTickIndices(artifact.labels.length);
+  const maxTicks = isDense ? 8 : 6;
+  const labelTickIndices = getLabelTickIndices(artifact.labels.length, maxTicks);
+  const strokeWidth = isDense ? 1.5 : 2.5;
 
   return (
     <div className="space-y-3">
@@ -371,9 +389,10 @@ function LineChart({ artifact }: { artifact: Extract<Artifact, { kind: "chart" }
               key={series.name}
               fill="none"
               stroke={palette[seriesIndex % palette.length]}
-              strokeWidth="2.5"
+              strokeWidth={strokeWidth}
               strokeLinecap="round"
               strokeLinejoin="round"
+              strokeOpacity={0.85}
               points={points.join(" ")}
             />
           );
@@ -392,11 +411,11 @@ function LineChart({ artifact }: { artifact: Extract<Artifact, { kind: "chart" }
               />
               <text
                 x={x}
-                y={height - 10}
+                y={height - padBottom + 16}
                 textAnchor="middle"
-                className="fill-slate-500 text-[10px]"
+                className="fill-slate-500 text-[8px]"
               >
-                {artifact.labels[index]}
+                {shortenDateLabel(artifact.labels[index])}
               </text>
             </g>
           );
@@ -477,12 +496,205 @@ function TableArtifactView({ artifact }: { artifact: Extract<Artifact, { kind: "
   );
 }
 
+function QueryLogModal({
+  sessionId,
+  queryLogId,
+  onClose,
+}: {
+  sessionId: string;
+  queryLogId: number;
+  onClose: () => void;
+}) {
+  const [detail, setDetail] = useState<QueryLogDetail | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    setLoading(true);
+    getQueryLogDetail(sessionId, queryLogId)
+      .then(setDetail)
+      .catch(console.error)
+      .finally(() => setLoading(false));
+  }, [sessionId, queryLogId]);
+
+  return (
+    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 backdrop-blur-sm" onClick={onClose}>
+      <div
+        className="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl w-full max-w-2xl max-h-[80vh] flex flex-col border border-slate-200 dark:border-slate-800"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Header */}
+        <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200 dark:border-slate-800">
+          <h3 className="text-sm font-bold text-slate-800 dark:text-slate-100 flex items-center gap-2">
+            <span className="material-symbols-outlined text-emerald-500 text-lg">code</span>
+            Agent Execution Log
+          </h3>
+          <button onClick={onClose} className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200">
+            <span className="material-symbols-outlined text-lg">close</span>
+          </button>
+        </div>
+
+        {/* Body */}
+        <div className="flex-1 overflow-y-auto px-6 py-4 space-y-5">
+          {loading && (
+            <div className="flex items-center justify-center py-10 text-slate-400 text-sm">
+              <span className="material-symbols-outlined animate-spin mr-2">progress_activity</span>
+              Loading execution log...
+            </div>
+          )}
+
+          {detail && !loading && (
+            <>
+              {/* Planner */}
+              {detail.planner && Object.keys(detail.planner).length > 0 && (
+                <div>
+                  <h4 className="text-[11px] font-bold uppercase tracking-wider text-emerald-500 mb-2">Query Planner</h4>
+                  <div className="rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50 p-3 space-y-2 text-[12px]">
+                    {detail.planner.question_understanding && (
+                      <div>
+                        <span className="font-semibold text-slate-600 dark:text-slate-300">Understanding: </span>
+                        <span className="text-slate-500 dark:text-slate-400">{detail.planner.question_understanding}</span>
+                      </div>
+                    )}
+                    {detail.planner.complexity && (
+                      <div>
+                        <span className="font-semibold text-slate-600 dark:text-slate-300">Complexity: </span>
+                        <span className="px-1.5 py-0.5 rounded bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300 text-[10px] font-mono">
+                          {detail.planner.complexity}
+                        </span>
+                      </div>
+                    )}
+                    {detail.planner.target_tables && detail.planner.target_tables.length > 0 && (
+                      <div>
+                        <span className="font-semibold text-slate-600 dark:text-slate-300">Target tables: </span>
+                        <span className="text-slate-500 dark:text-slate-400">{detail.planner.target_tables.join(", ")}</span>
+                      </div>
+                    )}
+                    {detail.planner.stop_condition && (
+                      <div>
+                        <span className="font-semibold text-slate-600 dark:text-slate-300">Stop condition: </span>
+                        <span className="text-slate-500 dark:text-slate-400">{detail.planner.stop_condition}</span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* Attempts */}
+              {detail.attempts && detail.attempts.length > 0 && (
+                <div>
+                  <h4 className="text-[11px] font-bold uppercase tracking-wider text-emerald-500 mb-2">
+                    Execution Steps ({detail.attempts.length})
+                  </h4>
+                  <div className="space-y-3">
+                    {detail.attempts.map((attempt, i) => (
+                      <div
+                        key={i}
+                        className="rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50 p-3"
+                      >
+                        <div className="flex items-center gap-2 mb-2">
+                          <span className={`size-5 rounded-full flex items-center justify-center text-[10px] font-bold ${
+                            attempt.status === "success"
+                              ? "bg-emerald-500/15 text-emerald-500"
+                              : "bg-red-500/15 text-red-500"
+                          }`}>
+                            {attempt.attempt || i + 1}
+                          </span>
+                          <span className="text-[12px] font-semibold text-slate-700 dark:text-slate-200">{attempt.title}</span>
+                          <span className="ml-auto px-1.5 py-0.5 rounded text-[9px] font-mono bg-slate-200 dark:bg-slate-700 text-slate-500 dark:text-slate-400">
+                            {attempt.kind} / {attempt.answer_mode}
+                          </span>
+                        </div>
+                        {attempt.sql && (
+                          <pre className="mt-2 p-2 rounded bg-slate-900 dark:bg-slate-950 text-emerald-400 text-[11px] font-mono overflow-x-auto whitespace-pre-wrap leading-relaxed">
+                            {attempt.sql}
+                          </pre>
+                        )}
+                        {attempt.error && (
+                          <p className="mt-2 text-[11px] text-red-500">{attempt.error}</p>
+                        )}
+                        {attempt.summary && (
+                          <p className="mt-2 text-[11px] text-slate-500 dark:text-slate-400">{attempt.summary}</p>
+                        )}
+                        {attempt.sources && attempt.sources.length > 0 && (
+                          <div className="mt-2 flex gap-1 flex-wrap">
+                            {attempt.sources.map((src) => (
+                              <span key={src} className="px-1.5 py-0.5 rounded-full bg-slate-200 dark:bg-slate-700 text-[9px] text-slate-500 dark:text-slate-400">
+                                {src}
+                              </span>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {detail.attempts.length === 0 && (!detail.planner || Object.keys(detail.planner).length === 0) && (
+                <p className="text-center text-slate-400 text-sm py-8">No execution details available for this query.</p>
+              )}
+            </>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ChartDataTable({ artifact }: { artifact: Extract<Artifact, { kind: "chart" }> }) {
+  const columns = [artifact.labels.length > 0 ? "Label" : "", ...artifact.series.map((s) => s.name)];
+  return (
+    <div className="max-h-52 overflow-auto rounded-lg border border-slate-200 dark:border-slate-700/50">
+      <table className="w-full text-[11px]">
+        <thead className="sticky top-0 bg-slate-100 dark:bg-slate-800">
+          <tr>
+            {columns.map((col) => (
+              <th key={col} className="px-3 py-1.5 text-left font-semibold text-slate-600 dark:text-slate-300 whitespace-nowrap">
+                {col}
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {artifact.labels.map((label, i) => (
+            <tr key={`${label}-${i}`} className="border-t border-slate-100 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/50">
+              <td className="px-3 py-1 text-slate-500 whitespace-nowrap">{label}</td>
+              {artifact.series.map((s) => (
+                <td key={s.name} className="px-3 py-1 font-mono text-slate-700 dark:text-slate-300 text-right whitespace-nowrap">
+                  {s.values[i] != null ? s.values[i].toLocaleString() : "—"}
+                </td>
+              ))}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
 function ArtifactRenderer({ artifact }: { artifact: Artifact }) {
+  const [showData, setShowData] = useState(false);
+
   if (artifact.kind === "metric") return <MetricArtifactView artifact={artifact} />;
   if (artifact.kind === "table") return <TableArtifactView artifact={artifact} />;
-  if (artifact.chart_type === "line") return <LineChart artifact={artifact} />;
-  if (artifact.chart_type === "funnel") return <FunnelChart artifact={artifact} />;
-  return <BarChart artifact={artifact} />;
+
+  const chartElement =
+    artifact.chart_type === "line" ? <LineChart artifact={artifact} /> :
+    artifact.chart_type === "funnel" ? <FunnelChart artifact={artifact} /> :
+    <BarChart artifact={artifact} />;
+
+  return (
+    <div>
+      {showData ? <ChartDataTable artifact={artifact} /> : chartElement}
+      <button
+        onClick={() => setShowData(!showData)}
+        className="mt-2 flex items-center gap-1 text-[10px] text-slate-400 hover:text-emerald-500 transition-colors"
+      >
+        <span className="material-symbols-outlined text-sm">{showData ? "bar_chart" : "table_rows"}</span>
+        <span>{showData ? "Show chart" : "View data"}</span>
+      </button>
+    </div>
+  );
 }
 
 function InlineArtifactCard({
@@ -638,6 +850,7 @@ export default function WorkspacePage() {
   const [referenceOpen, setReferenceOpen] = useState(false);
   const [referenceTab, setReferenceTab] = useState<"brief" | "sources">("brief");
   const [saveDrafts, setSaveDrafts] = useState<Record<string, string>>({});
+  const [logModalQueryId, setLogModalQueryId] = useState<number | null>(null);
   const [theme, setTheme] = useState<"light" | "dark" | "system">("system");
   const chatEndRef = useRef<HTMLDivElement>(null);
   const evidenceEndRef = useRef<HTMLDivElement>(null);
@@ -821,6 +1034,13 @@ export default function WorkspacePage() {
         onClose={() => setReferenceOpen(false)}
         reference={scenarioDetail?.reference_panel}
       />
+      {logModalQueryId !== null && (
+        <QueryLogModal
+          sessionId={sessionId}
+          queryLogId={logModalQueryId}
+          onClose={() => setLogModalQueryId(null)}
+        />
+      )}
 
       <header className="flex items-center border-b border-slate-200 dark:border-slate-800 px-5 py-2 bg-white dark:bg-slate-900 shrink-0">
         <div className="flex items-center gap-3 shrink-0">
@@ -1003,6 +1223,17 @@ export default function WorkspacePage() {
                             {warning}
                           </span>
                         ))}
+                      </div>
+                    )}
+                    {message.role === "agent" && message.queryLogId && (
+                      <div className="mt-3 flex justify-end">
+                        <button
+                          onClick={() => setLogModalQueryId(message.queryLogId!)}
+                          className="flex items-center gap-1 px-2 py-1 rounded-md text-[10px] font-medium text-slate-400 hover:text-emerald-500 hover:bg-emerald-500/10 transition-colors"
+                        >
+                          <span className="material-symbols-outlined text-sm">code</span>
+                          View log
+                        </button>
                       </div>
                     )}
                   </div>

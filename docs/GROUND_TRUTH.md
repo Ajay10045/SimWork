@@ -205,5 +205,5 @@ ZaikaNow is exploring a premium membership tier — "ZaikaNow Gold" — to boost
 
 Both scenarios share `scenarios/checkout_conversion_drop/tables/scenario.db`:
 - ~49,252 orders across Oct 2024 -- Mar 2025
-- 15 tables: users, orders, payments, restaurants, menu_items, order_items, drivers, funnel_events, reviews, support_tickets, ux_changelog, deployments, service_metrics, payment_errors_summary, documents
+- 15 tables: users, orders, payments, restaurants, menu_items, order_items, drivers, funnel_events, reviews, support_tickets, ux_changelog, deployments, service_metrics, error_log, documents
 - MECE schema: city, platform, user_type in users table only; other tables reference via FK

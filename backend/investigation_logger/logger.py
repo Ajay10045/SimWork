@@ -304,6 +304,36 @@ def get_query_history(session_id: str) -> list[dict[str, Any]]:
     ]
 
 
+def get_query_log_detail(session_id: str, query_log_id: int) -> dict[str, Any] | None:
+    """Return full query log detail including planner and attempts for a single query."""
+    conn = _get_conn()
+    _ensure_query_log_columns(conn)
+    row = conn.execute(
+        """
+        SELECT id, agent, query_text, response_text, artifacts_json, citations_json,
+               warnings_json, planner_json, attempts_json, timestamp
+        FROM query_logs
+        WHERE session_id = ? AND id = ?
+        """,
+        (session_id, query_log_id),
+    ).fetchone()
+    conn.close()
+    if row is None:
+        return None
+    return {
+        "query_log_id": row["id"],
+        "agent": row["agent"],
+        "query": row["query_text"],
+        "response": row["response_text"],
+        "artifacts": json.loads(row["artifacts_json"] or "[]"),
+        "citations": json.loads(row["citations_json"] or "[]"),
+        "warnings": json.loads(row["warnings_json"] or "[]"),
+        "planner": json.loads(row["planner_json"] or "{}"),
+        "attempts": json.loads(row["attempts_json"] or "[]"),
+        "timestamp": row["timestamp"],
+    }
+
+
 def save_evidence(
     session_id: str,
     query_log_id: int,

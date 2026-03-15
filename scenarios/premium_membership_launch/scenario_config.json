@@ -132,10 +132,10 @@
         "description": "Customer reviews, support tickets, usability research, and product change history. JOIN reviews/tickets to users for segment context."
       },
       "engineering_lead": {
-        "tables": ["deployments", "service_metrics", "payment_errors_summary"],
+        "tables": ["deployments", "service_metrics", "error_log"],
         "documents": ["system_architecture.md"],
         "access_type": "direct",
-        "description": "Service reliability data, deployment history, payment error patterns — informs SLA promises for premium tier."
+        "description": "Service reliability data, deployment history, detailed error log — informs SLA promises for premium tier."
       }
     }
   },

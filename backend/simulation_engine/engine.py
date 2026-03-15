@@ -11,6 +11,7 @@ from investigation_logger.logger import (
     create_session,
     get_queries_count,
     get_query_history,
+    get_query_log_detail,
     get_saved_evidence,
     get_scoring_result,
     get_session,
@@ -231,6 +232,16 @@ def handle_submission(
         },
     )
     return {"status": "submitted", "session_complete": True, "submission_id": submission_id}
+
+
+def handle_get_query_log(session_id: str, query_log_id: int) -> dict[str, Any]:
+    session = get_session(session_id)
+    if session is None:
+        raise ValueError(f"Session not found: {session_id}")
+    detail = get_query_log_detail(session_id, query_log_id)
+    if detail is None:
+        raise ValueError(f"Query log not found: {query_log_id}")
+    return detail
 
 
 def get_session_status(session_id: str) -> dict[str, Any]:

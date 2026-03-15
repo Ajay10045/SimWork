@@ -29,7 +29,7 @@ AGENT_TABLE_ACCESS: dict[str, list[str]] = {
         "deployments",
         "service_metrics",
         "system_architecture.md",
-        "payment_errors_summary",
+        "error_log",
     ],
 }
 

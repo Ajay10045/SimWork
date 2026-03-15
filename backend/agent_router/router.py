@@ -26,7 +26,7 @@ logger = logging.getLogger(__name__)
 MAX_HISTORY_ITEMS = 12
 MAX_INVESTIGATION_ATTEMPTS = 4
 MAX_TABLE_RESULT_ROWS = 12
-MAX_CHART_RESULT_ROWS = 240
+MAX_CHART_RESULT_ROWS = 10000
 MAX_CLARIFICATION_QUESTIONS = 3
 
 PLAN_SCHEMA = {
@@ -700,14 +700,65 @@ def _artifact_from_evidence(item: dict[str, Any], citation_id: str, agent: str) 
         }
     if rows and len(columns) >= 2 and numeric_columns and (answer_mode == "chart" or len(rows) <= 12):
         label_column = next((col for col in columns if col not in numeric_columns), columns[0])
-        value_column = next((col for col in numeric_columns if col != label_column), numeric_columns[0])
+        value_columns = [col for col in numeric_columns if col != label_column]
+        if not value_columns:
+            value_columns = numeric_columns[:1]
+
+        # Detect long-format data that should be pivoted into multi-series.
+        # Pattern: exactly 3 columns — label, category (string), value (numeric).
+        # Example: date | platform | order_count → pivot into one series per platform.
+        non_numeric_non_label = [c for c in columns if c not in numeric_columns and c != label_column]
+        if len(value_columns) == 1 and len(non_numeric_non_label) == 1:
+            category_column = non_numeric_non_label[0]
+            val_col = value_columns[0]
+            categories = list(dict.fromkeys(str(row.get(category_column, "")) for row in rows))
+            if 2 <= len(categories) <= 8:
+                # Pivot: group by label, create one series per category
+                from collections import OrderedDict
+                label_order: list[str] = list(dict.fromkeys(str(row.get(label_column, "")) for row in rows))
+                pivoted: dict[str, dict[str, float]] = OrderedDict()
+                for lbl in label_order:
+                    pivoted[lbl] = {cat: 0.0 for cat in categories}
+                for row in rows:
+                    lbl = str(row.get(label_column, ""))
+                    cat = str(row.get(category_column, ""))
+                    pivoted[lbl][cat] = float(row.get(val_col, 0) or 0)
+                chart_type = "line" if _looks_like_time_column(rows, label_column) else "bar"
+                series = [
+                    {"name": cat, "values": [pivoted[lbl][cat] for lbl in label_order]}
+                    for cat in categories
+                ]
+                from agent_router.downsample import downsample_chart
+                label_order, series, _ds = downsample_chart(label_order, series)
+                return {
+                    "kind": "chart",
+                    "title": item["title"],
+                    "chart_type": chart_type,
+                    "labels": label_order,
+                    "series": series,
+                    "citation_ids": [citation_id],
+                    "purpose": "supporting_evidence",
+                    "display_mode": "board_default",
+                    "source_role": agent,
+                    "confidence": "medium",
+                    "card_variant": "chart",
+                    "summary": item["summary"],
+                }
+
         chart_type = "line" if _looks_like_time_column(rows, label_column) else "bar"
+        labels_list = [str(row.get(label_column, "")) for row in rows]
+        series = [
+            {"name": col, "values": [float(row.get(col, 0) or 0) for row in rows]}
+            for col in value_columns
+        ]
+        from agent_router.downsample import downsample_chart
+        labels_list, series, _ds = downsample_chart(labels_list, series)
         return {
             "kind": "chart",
             "title": item["title"],
             "chart_type": chart_type,
-            "labels": [str(row.get(label_column, "")) for row in rows],
-            "series": [{"name": value_column, "values": [float(row.get(value_column, 0) or 0) for row in rows]}],
+            "labels": labels_list,
+            "series": series,
             "citation_ids": [citation_id],
             "purpose": "supporting_evidence",
             "display_mode": "board_default",

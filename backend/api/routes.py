@@ -14,6 +14,7 @@ from simulation_engine.engine import (
     get_scenario_details,
     get_session_process_log,
     get_session_status,
+    handle_get_query_log,
     handle_get_saved_evidence,
     handle_get_score,
     handle_log_event,
@@ -110,6 +111,14 @@ def api_log_session_event(session_id: str, req: SessionEventRequest):
 @router.get("/sessions/{session_id}/history")
 def api_get_history(session_id: str):
     return {"queries": get_query_history(session_id)}
+
+
+@router.get("/sessions/{session_id}/query/{query_log_id}")
+def api_get_query_log(session_id: str, query_log_id: int):
+    try:
+        return handle_get_query_log(session_id, query_log_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail={"error": "not_found", "message": str(exc)})
 
 
 @router.get("/sessions/{session_id}/evidence")

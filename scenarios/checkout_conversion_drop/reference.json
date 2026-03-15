@@ -34,11 +34,13 @@
         {
           "name": "orders",
           "type": "table",
-          "description": "Order attempts with status and amount. JOIN to users for city/platform/user_type.",
+          "description": "Order attempts with status and amount. JOIN to users for city/platform/user_type. session_id links to funnel_events sessions.",
           "fields": [
             { "name": "order_id", "type": "string", "description": "Primary key. Unique order identifier." },
             { "name": "user_id", "type": "string", "description": "Foreign key to users." },
             { "name": "restaurant_id", "type": "string", "description": "Foreign key to restaurants." },
+            { "name": "driver_id", "type": "string", "description": "Foreign key to drivers. Assigned for completed orders, empty for failed/cancelled." },
+            { "name": "session_id", "type": "string", "description": "Session that originated this order. S-prefix = funnel session, QR-prefix = quick reorder." },
             { "name": "order_status", "type": "enum", "description": "completed / failed / cancelled." },
             { "name": "total_amount", "type": "float", "description": "Order total in INR." },
             { "name": "created_at", "type": "datetime", "description": "Order timestamp." }
@@ -51,9 +53,10 @@
           "fields": [
             { "name": "payment_id", "type": "string", "description": "Primary key." },
             { "name": "order_id", "type": "string", "description": "Foreign key to orders." },
+            { "name": "session_id", "type": "string", "description": "Session identifier, copied from parent order." },
             { "name": "method", "type": "enum", "description": "upi / credit_card / debit_card / wallet / cod." },
             { "name": "provider", "type": "enum", "description": "rupeeflow_v2 / rupeeflow_v3 / cash_on_delivery." },
-            { "name": "status", "type": "enum", "description": "success / failed / timeout." },
+            { "name": "status", "type": "enum", "description": "success / failed / timeout / cancelled." },
             { "name": "amount", "type": "float", "description": "Payment amount in INR." },
             { "name": "processing_time_ms", "type": "int", "description": "Payment processing duration in milliseconds." },
             { "name": "error_code", "type": "string", "description": "Error code when payment does not complete cleanly." },
@@ -213,14 +216,19 @@
           ]
         },
         {
-          "name": "payment_errors_summary",
+          "name": "error_log",
           "type": "table",
-          "description": "Aggregated payment error patterns by error code, payment method, and date.",
+          "description": "Row-per-error detail log across services. Includes payment errors with session/order tracing, plus non-payment service errors (search, notification).",
           "fields": [
-            { "name": "date", "type": "date", "description": "Error date." },
-            { "name": "error_code", "type": "string", "description": "Payment error code." },
-            { "name": "count", "type": "int", "description": "Number of occurrences." },
-            { "name": "payment_method", "type": "enum", "description": "Payment method: upi / credit_card / debit_card / wallet." }
+            { "name": "error_id", "type": "string", "description": "Primary key." },
+            { "name": "timestamp", "type": "datetime", "description": "Error timestamp." },
+            { "name": "session_id", "type": "string", "description": "Session identifier (empty for non-order errors)." },
+            { "name": "order_id", "type": "string", "description": "Order identifier (empty for non-order errors)." },
+            { "name": "service", "type": "string", "description": "Service: payment_service / search_service / notification_service." },
+            { "name": "error_code", "type": "string", "description": "Error code: UPI_CALLBACK_TIMEOUT, PAYMENT_PROVIDER_ERROR, SEARCH_INDEX_TIMEOUT, etc." },
+            { "name": "payment_method", "type": "string", "description": "Payment method (only for payment_service errors)." },
+            { "name": "platform", "type": "enum", "description": "Platform: ios / android / web." },
+            { "name": "severity", "type": "enum", "description": "critical / high / medium / low." }
           ]
         },
         {

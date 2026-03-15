@@ -142,10 +142,10 @@
         "description": "User feedback, support tickets, usability research, and product change history. JOIN reviews/tickets to users for city/platform context."
       },
       "engineering_lead": {
-        "tables": ["deployments", "service_metrics", "payment_errors_summary"],
+        "tables": ["deployments", "service_metrics", "error_log"],
         "documents": ["system_architecture.md"],
         "access_type": "direct",
-        "description": "Deployment history, service health metrics, architecture notes, and payment error patterns by method."
+        "description": "Deployment history, service health metrics, architecture notes, and detailed error log with per-error tracing across services."
       }
     }
   },
