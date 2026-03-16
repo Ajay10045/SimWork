@@ -187,3 +187,192 @@ class LLMClient:
             max_tokens=self.max_tokens,
         )
         return self._extract_anthropic_text(response)
+
+    def chat_with_tools(
+        self,
+        messages: list[dict[str, Any]],
+        tools: list[dict[str, Any]],
+        tool_executor: Any,  # Callable[[str, dict], str]
+        max_iterations: int = 5,
+    ) -> str:
+        """ReAct tool-use loop. Returns final text after up to max_iterations tool rounds.
+
+        Args:
+            messages: Conversation messages (system + user + history).
+            tools: OpenAI-format tool definitions.
+            tool_executor: Callable(tool_name, args_dict) -> str result.
+            max_iterations: Safety cap on tool-call rounds.
+
+        Returns:
+            Final text response from the LLM.
+        """
+        import logging
+
+        logger = logging.getLogger(__name__)
+        msgs = [dict(m) for m in messages]  # defensive copy
+
+        if self.provider in {"openai", "deepseek", "ollama"}:
+            return self._tool_loop_openai(msgs, tools, tool_executor, max_iterations, logger)
+        elif self.provider == "anthropic":
+            return self._tool_loop_anthropic(msgs, tools, tool_executor, max_iterations, logger)
+        else:
+            raise RuntimeError(f"Tool calling not supported for provider: {self.provider}")
+
+    def _tool_loop_openai(
+        self,
+        msgs: list[dict[str, Any]],
+        tools: list[dict[str, Any]],
+        tool_executor: Any,
+        max_iterations: int,
+        logger: Any,
+    ) -> str:
+        """ReAct loop for OpenAI-compatible APIs (openai, deepseek, ollama)."""
+        for iteration in range(max_iterations):
+            response = self.client.chat.completions.create(
+                model=self.model,
+                messages=msgs,
+                tools=tools,
+                tool_choice="auto",
+                temperature=self.temperature,
+            )
+            choice = response.choices[0]
+
+            # If no tool calls, return the text content
+            if not choice.message.tool_calls:
+                return self._clean_dsml(choice.message.content or "")
+
+            # Append the assistant message with tool calls
+            msgs.append(choice.message.model_dump())
+
+            # Execute each tool call and append results
+            for tc in choice.message.tool_calls:
+                fn_name = tc.function.name
+                try:
+                    fn_args = json.loads(tc.function.arguments)
+                except json.JSONDecodeError:
+                    fn_args = {}
+
+                logger.info(f"Tool call [{iteration+1}/{max_iterations}]: {fn_name}({fn_args})")
+
+                try:
+                    result = tool_executor(fn_name, fn_args)
+                except Exception as e:
+                    result = f"Error executing {fn_name}: {e}"
+
+                msgs.append({
+                    "role": "tool",
+                    "tool_call_id": tc.id,
+                    "content": str(result),
+                })
+
+        # Exhausted iterations — force a final response with a clean prompt
+        logger.warning(f"Tool loop exhausted after {max_iterations} iterations, forcing final response")
+
+        # Collect all tool results to build a data summary
+        data_parts = []
+        for m in msgs:
+            if isinstance(m, dict) and m.get("role") == "tool":
+                data_parts.append(m.get("content", ""))
+
+        # Get the system prompt and original user question
+        system_msg = next((m.get("content", "") for m in msgs if isinstance(m, dict) and m.get("role") == "system"), "")
+        user_msg = next((m.get("content", "") for m in msgs if isinstance(m, dict) and m.get("role") == "user"), "")
+
+        summary_prompt = [
+            {"role": "system", "content": system_msg},
+            {"role": "user", "content": (
+                f"Original question: {user_msg}\n\n"
+                f"Here is all the data you've gathered from your queries:\n\n"
+                + "\n---\n".join(data_parts[-6:]) +  # last 6 tool results
+                "\n\nNow formulate your final response as a JSON object with insight, chart, and next_steps. "
+                "Do NOT call any tools. Respond with ONLY the JSON object."
+            )},
+        ]
+        response = self.client.chat.completions.create(
+            model=self.model,
+            messages=summary_prompt,
+            temperature=self.temperature,
+        )
+        text = response.choices[0].message.content or ""
+        return self._clean_dsml(text)
+
+    def _tool_loop_anthropic(
+        self,
+        msgs: list[dict[str, Any]],
+        tools: list[dict[str, Any]],
+        tool_executor: Any,
+        max_iterations: int,
+        logger: Any,
+    ) -> str:
+        """ReAct loop for Anthropic API."""
+        # Convert OpenAI tool format to Anthropic format
+        anthropic_tools = []
+        for t in tools:
+            fn = t["function"]
+            anthropic_tools.append({
+                "name": fn["name"],
+                "description": fn["description"],
+                "input_schema": fn["parameters"],
+            })
+
+        # Extract system message
+        system_parts = [m["content"] for m in msgs if m["role"] == "system"]
+        convo = [m for m in msgs if m["role"] != "system"]
+        system_text = "\n\n".join(system_parts) if system_parts else "You are a helpful assistant."
+
+        for iteration in range(max_iterations):
+            response = self.client.messages.create(
+                model=self.model,
+                system=system_text,
+                messages=convo,
+                tools=anthropic_tools,
+                temperature=self.temperature,
+                max_tokens=self.max_tokens * 2,  # extra room for tool reasoning
+            )
+
+            # Check if there are tool use blocks
+            tool_use_blocks = [b for b in response.content if b.type == "tool_use"]
+
+            if not tool_use_blocks:
+                # No tool calls — extract and return text
+                return self._extract_anthropic_text(response)
+
+            # Append assistant response as-is
+            convo.append({"role": "assistant", "content": response.content})
+
+            # Execute tools and build tool results
+            tool_results = []
+            for tb in tool_use_blocks:
+                logger.info(f"Tool call [{iteration+1}/{max_iterations}]: {tb.name}({tb.input})")
+                try:
+                    result = tool_executor(tb.name, tb.input)
+                except Exception as e:
+                    result = f"Error executing {tb.name}: {e}"
+                tool_results.append({
+                    "type": "tool_result",
+                    "tool_use_id": tb.id,
+                    "content": str(result),
+                })
+
+            convo.append({"role": "user", "content": tool_results})
+
+        # Exhausted iterations — force a final response without tools
+        logger.warning(f"Tool loop exhausted after {max_iterations} iterations, forcing final response")
+        response = self.client.messages.create(
+            model=self.model,
+            system=system_text,
+            messages=convo,
+            temperature=self.temperature,
+            max_tokens=self.max_tokens,
+        )
+        return self._extract_anthropic_text(response)
+
+    @staticmethod
+    def _clean_dsml(text: str) -> str:
+        """Strip DeepSeek DSML tool-call artifacts from response text."""
+        # Remove DSML blocks: <｜DSML｜...> or <| DSML |...> patterns
+        text = re.sub(r'<[｜|]\s*DSML\s*[｜|][^>]*>[\s\S]*?</[｜|]\s*DSML\s*[｜|][^>]*>', '', text)
+        text = re.sub(r'<[｜|]\s*DSML\s*[｜|][^>]*>', '', text)
+        text = re.sub(r'</[｜|]\s*DSML\s*[｜|][^>]*>', '', text)
+        return text.strip()
+
