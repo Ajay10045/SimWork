@@ -3,10 +3,11 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 from typing import Any
 
-SCENARIOS_DIR = Path(__file__).resolve().parent.parent.parent / "scenarios"
+SCENARIOS_DIR = Path(os.environ.get("SIMWORK_SCENARIOS_DIR", Path(__file__).resolve().parent.parent.parent / "scenarios"))
 
 
 def list_scenarios() -> list[dict[str, str]]:
