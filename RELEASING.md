@@ -35,3 +35,4 @@ This project releases from `main` using Semantic Versioning and an annotated git
 - Keep an `Unreleased` section at the top of `CHANGELOG.md` between releases.
 - Group changelog entries under `Added`, `Changed`, `Fixed`, `Removed`, and `Security` where useful.
 - Write release notes for users and operators; write the changelog as the durable engineering record.
+- Keep tracked documentation minimal: shared project docs at repo root, release notes under `docs/releases/`, and local working materials under `.local/docs/`.

@@ -173,6 +173,9 @@ ENV/
 env.bak/
 venv.bak/
 
+# Local-only working notes and reference material
+.local/
+
 # Local secrets / certs
 *.pem
 *.key
