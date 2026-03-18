@@ -184,7 +184,9 @@ export default function LandingPage() {
 
   const openDemoForm = () => {
     setShowDemoForm(true);
-    document.getElementById("cta")?.scrollIntoView({ behavior: "smooth" });
+    setTimeout(() => {
+      document.getElementById("cta")?.scrollIntoView({ behavior: "smooth", block: "center" });
+    }, 100);
   };
 
   return (
