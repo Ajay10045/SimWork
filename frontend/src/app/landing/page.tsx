@@ -55,7 +55,7 @@ const BG_STYLE = {
   backgroundSize: "24px 24px, 100% 100%, 100% 100%",
 };
 
-function DemoForm({ onClose }: { onClose: () => void }) {
+function DemoForm() {
   const [email, setEmail] = useState("");
   const [company, setCompany] = useState("");
   const [message, setMessage] = useState("");
@@ -84,15 +84,7 @@ function DemoForm({ onClose }: { onClose: () => void }) {
   }
 
   return (
-    <div className="relative w-full max-w-md mx-auto">
-      <button
-        type="button"
-        onClick={onClose}
-        className="absolute -top-2 -right-2 flex items-center justify-center size-8 rounded-full bg-slate-800 text-slate-400 hover:text-white hover:bg-slate-700 transition-colors"
-        title="Close"
-      >
-        <span className="material-symbols-outlined text-lg">close</span>
-      </button>
+    <div className="w-full max-w-md mx-auto">
       <form onSubmit={handleSubmit} className="space-y-4 text-left">
         <div>
           <label htmlFor="email" className="block text-sm font-medium text-slate-300 mb-1.5">
@@ -156,6 +148,16 @@ function CTASection() {
         {/* Gradient glow */}
         <div className="absolute inset-0 bg-gradient-to-r from-[#10B981]/20 via-transparent to-[#10B981]/10 blur-xl" />
         <div className="relative rounded-2xl border border-slate-800 bg-[#101122] p-10 md:p-16 text-center">
+          {showForm && (
+            <button
+              type="button"
+              onClick={() => setShowForm(false)}
+              className="absolute top-4 right-4 flex items-center justify-center size-8 rounded-full bg-slate-800 text-slate-400 hover:text-white hover:bg-slate-700 transition-colors z-10"
+              title="Close"
+            >
+              <span className="material-symbols-outlined text-lg">close</span>
+            </button>
+          )}
           <h2 className="text-3xl md:text-4xl font-black mb-4">
             Ready to see candidates in action?
           </h2>
@@ -164,7 +166,7 @@ function CTASection() {
             performers with objective simulation data.
           </p>
           {showForm ? (
-            <DemoForm onClose={() => setShowForm(false)} />
+            <DemoForm />
           ) : (
             <button
               onClick={() => setShowForm(true)}
