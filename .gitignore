@@ -175,6 +175,7 @@ venv.bak/
 
 # Local-only working notes and reference material
 .local/
+local/
 
 # Local secrets / certs
 *.pem
