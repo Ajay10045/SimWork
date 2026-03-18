@@ -55,11 +55,19 @@ def _ensure_submissions_columns(conn: sqlite3.Connection) -> None:
 
 
 def _ensure_sessions_columns(conn: sqlite3.Connection) -> None:
-    wanted: dict[str, str] = {"challenge_id": "TEXT"}
+    wanted: dict[str, str] = {"challenge_id": "TEXT", "assessment_id": "TEXT", "invite_token": "TEXT"}
     existing = _table_columns(conn, "sessions")
     for column, data_type in wanted.items():
         if column not in existing:
             conn.execute(f"ALTER TABLE sessions ADD COLUMN {column} {data_type}")
+
+
+def _ensure_users_columns(conn: sqlite3.Connection) -> None:
+    wanted: dict[str, str] = {"role": "TEXT DEFAULT 'candidate'"}
+    existing = _table_columns(conn, "users")
+    for column, data_type in wanted.items():
+        if column not in existing:
+            conn.execute(f"ALTER TABLE users ADD COLUMN {column} {data_type}")
 
 
 def init_db() -> None:
@@ -152,14 +160,45 @@ def init_db() -> None:
             email TEXT NOT NULL UNIQUE,
             name TEXT,
             picture TEXT,
+            role TEXT DEFAULT 'candidate',
             created_at TEXT NOT NULL,
             last_login_at TEXT NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS companies (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL,
+            owner_user_id TEXT NOT NULL UNIQUE,
+            created_at TEXT NOT NULL,
+            FOREIGN KEY (owner_user_id) REFERENCES users(id)
+        );
+
+        CREATE TABLE IF NOT EXISTS assessments (
+            id TEXT PRIMARY KEY,
+            company_id INTEGER NOT NULL,
+            scenario_id TEXT NOT NULL,
+            challenge_id TEXT,
+            title TEXT,
+            created_at TEXT NOT NULL,
+            FOREIGN KEY (company_id) REFERENCES companies(id)
+        );
+
+        CREATE TABLE IF NOT EXISTS invite_tokens (
+            token TEXT PRIMARY KEY,
+            assessment_id TEXT NOT NULL,
+            candidate_email TEXT,
+            created_at TEXT NOT NULL,
+            used_at TEXT,
+            used_by_user_id TEXT,
+            expires_at TEXT,
+            FOREIGN KEY (assessment_id) REFERENCES assessments(id)
         );
         """
     )
     _ensure_query_log_columns(conn)
     _ensure_submissions_columns(conn)
     _ensure_sessions_columns(conn)
+    _ensure_users_columns(conn)
     conn.commit()
     conn.close()
 
@@ -182,22 +221,37 @@ def clear_all_session_data() -> None:
     conn.close()
 
 
-def upsert_user(user_id: str, email: str, name: str | None = None, picture: str | None = None) -> None:
-    """Insert a new user or update last_login_at for an existing one."""
+def upsert_user(user_id: str, email: str, name: str | None = None, picture: str | None = None, role: str | None = None) -> None:
+    """Insert a new user or update last_login_at for an existing one.
+
+    If *role* is provided and the user does not yet exist, the role is set.
+    Existing users keep their current role (role is never overwritten on update).
+    """
     conn = _get_conn()
+    _ensure_users_columns(conn)
     now = _utcnow()
+    user_role = role or "candidate"
     conn.execute(
         """
-        INSERT INTO users (id, email, name, picture, created_at, last_login_at)
-        VALUES (?, ?, ?, ?, ?, ?)
+        INSERT INTO users (id, email, name, picture, role, created_at, last_login_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(id) DO UPDATE SET
             email = excluded.email,
             name = excluded.name,
             picture = excluded.picture,
             last_login_at = excluded.last_login_at
         """,
-        (user_id, email, name, picture, now, now),
+        (user_id, email, name, picture, user_role, now, now),
     )
+    conn.commit()
+    conn.close()
+
+
+def set_user_role(user_id: str, role: str) -> None:
+    """Explicitly update a user's role."""
+    conn = _get_conn()
+    _ensure_users_columns(conn)
+    conn.execute("UPDATE users SET role = ? WHERE id = ?", (role, user_id))
     conn.commit()
     conn.close()
 
@@ -223,12 +277,19 @@ def get_user_sessions(user_id: str) -> list[dict[str, Any]]:
     return [dict(r) for r in rows]
 
 
-def create_session(session_id: str, candidate_id: str, scenario_id: str, challenge_id: str | None = None) -> None:
+def create_session(
+    session_id: str,
+    candidate_id: str,
+    scenario_id: str,
+    challenge_id: str | None = None,
+    assessment_id: str | None = None,
+    invite_token: str | None = None,
+) -> None:
     conn = _get_conn()
     _ensure_sessions_columns(conn)
     conn.execute(
-        "INSERT INTO sessions (session_id, candidate_id, scenario_id, challenge_id, started_at) VALUES (?, ?, ?, ?, ?)",
-        (session_id, candidate_id, scenario_id, challenge_id, _utcnow()),
+        "INSERT INTO sessions (session_id, candidate_id, scenario_id, challenge_id, assessment_id, invite_token, started_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+        (session_id, candidate_id, scenario_id, challenge_id, assessment_id, invite_token, _utcnow()),
     )
     conn.commit()
     conn.close()
@@ -653,3 +714,144 @@ def get_scoring_result(session_id: str) -> dict[str, Any] | None:
         **json.loads(row["highlights_json"] or "{}"),
         "scored_at": row["scored_at"],
     }
+
+
+# ── Company / Assessment / Invite helpers ──
+
+
+def create_company(name: str, owner_user_id: str) -> int:
+    conn = _get_conn()
+    cursor = conn.execute(
+        "INSERT INTO companies (name, owner_user_id, created_at) VALUES (?, ?, ?)",
+        (name, owner_user_id, _utcnow()),
+    )
+    conn.commit()
+    company_id = int(cursor.lastrowid)
+    conn.close()
+    return company_id
+
+
+def get_company_by_owner(owner_user_id: str) -> dict[str, Any] | None:
+    conn = _get_conn()
+    row = conn.execute("SELECT * FROM companies WHERE owner_user_id = ?", (owner_user_id,)).fetchone()
+    conn.close()
+    return dict(row) if row else None
+
+
+def create_assessment(assessment_id: str, company_id: int, scenario_id: str, challenge_id: str | None = None, title: str | None = None) -> None:
+    conn = _get_conn()
+    conn.execute(
+        "INSERT INTO assessments (id, company_id, scenario_id, challenge_id, title, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+        (assessment_id, company_id, scenario_id, challenge_id, title, _utcnow()),
+    )
+    conn.commit()
+    conn.close()
+
+
+def get_assessments_by_company(company_id: int) -> list[dict[str, Any]]:
+    conn = _get_conn()
+    rows = conn.execute(
+        "SELECT * FROM assessments WHERE company_id = ? ORDER BY created_at DESC",
+        (company_id,),
+    ).fetchall()
+    results = []
+    for row in rows:
+        assessment = dict(row)
+        # Count candidates (sessions linked to this assessment)
+        counts = conn.execute(
+            """
+            SELECT
+                COUNT(*) AS total,
+                SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) AS completed,
+                SUM(CASE WHEN status = 'active' THEN 1 ELSE 0 END) AS active
+            FROM sessions WHERE assessment_id = ?
+            """,
+            (row["id"],),
+        ).fetchone()
+        assessment["candidate_total"] = counts["total"] if counts else 0
+        assessment["candidate_completed"] = counts["completed"] if counts else 0
+        assessment["candidate_active"] = counts["active"] if counts else 0
+        results.append(assessment)
+    conn.close()
+    return results
+
+
+def get_assessment(assessment_id: str) -> dict[str, Any] | None:
+    conn = _get_conn()
+    row = conn.execute("SELECT * FROM assessments WHERE id = ?", (assessment_id,)).fetchone()
+    conn.close()
+    return dict(row) if row else None
+
+
+def get_assessment_candidates(assessment_id: str) -> list[dict[str, Any]]:
+    """Return sessions + user info + scores for all candidates in an assessment."""
+    conn = _get_conn()
+    rows = conn.execute(
+        """
+        SELECT s.session_id, s.candidate_id, s.started_at, s.ended_at, s.status,
+               u.email, u.name, u.picture,
+               sr.overall_score, sr.scored_at
+        FROM sessions s
+        LEFT JOIN users u ON s.candidate_id = u.id
+        LEFT JOIN scoring_results sr ON s.session_id = sr.session_id
+        WHERE s.assessment_id = ?
+        ORDER BY s.started_at DESC
+        """,
+        (assessment_id,),
+    ).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
+def create_invite_token(token: str, assessment_id: str, candidate_email: str | None = None, expires_at: str | None = None) -> None:
+    conn = _get_conn()
+    conn.execute(
+        "INSERT INTO invite_tokens (token, assessment_id, candidate_email, created_at, expires_at) VALUES (?, ?, ?, ?, ?)",
+        (token, assessment_id, candidate_email, _utcnow(), expires_at),
+    )
+    conn.commit()
+    conn.close()
+
+
+def get_invite_token(token: str) -> dict[str, Any] | None:
+    conn = _get_conn()
+    row = conn.execute(
+        """
+        SELECT it.*, a.scenario_id, a.challenge_id, a.title AS assessment_title,
+               c.name AS company_name, c.id AS company_id
+        FROM invite_tokens it
+        JOIN assessments a ON it.assessment_id = a.id
+        JOIN companies c ON a.company_id = c.id
+        WHERE it.token = ?
+        """,
+        (token,),
+    ).fetchone()
+    conn.close()
+    return dict(row) if row else None
+
+
+def claim_invite_token(token: str, user_id: str) -> None:
+    conn = _get_conn()
+    conn.execute(
+        "UPDATE invite_tokens SET used_at = ?, used_by_user_id = ? WHERE token = ?",
+        (_utcnow(), user_id, token),
+    )
+    conn.commit()
+    conn.close()
+
+
+def get_invite_tokens_by_assessment(assessment_id: str) -> list[dict[str, Any]]:
+    conn = _get_conn()
+    rows = conn.execute(
+        """
+        SELECT it.token, it.candidate_email, it.created_at, it.used_at, it.used_by_user_id, it.expires_at,
+               u.email AS claimed_by_email, u.name AS claimed_by_name
+        FROM invite_tokens it
+        LEFT JOIN users u ON it.used_by_user_id = u.id
+        WHERE it.assessment_id = ?
+        ORDER BY it.created_at DESC
+        """,
+        (assessment_id,),
+    ).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]

@@ -50,10 +50,16 @@ def _get_llm() -> LLMClient:
     return _llm
 
 
-def start_session(candidate_id: str, scenario_id: str, challenge_id: str | None = None) -> dict[str, Any]:
+def start_session(
+    candidate_id: str,
+    scenario_id: str,
+    challenge_id: str | None = None,
+    assessment_id: str | None = None,
+    invite_token: str | None = None,
+) -> dict[str, Any]:
     scenario = load_scenario(scenario_id)
     session_id = f"session_{uuid.uuid4().hex[:12]}"
-    create_session(session_id, candidate_id, scenario_id, challenge_id)
+    create_session(session_id, candidate_id, scenario_id, challenge_id, assessment_id, invite_token)
 
     problem_statement = scenario["problem_statement"]
     if challenge_id:
