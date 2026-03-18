@@ -255,6 +255,26 @@ export default function LandingPage() {
         </div>
       </section>
 
+      {/* ── Why SimWork ── */}
+      <section className="max-w-6xl mx-auto px-6 py-24">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+          {DIFFERENTIATORS.map((d) => (
+            <div
+              key={d.icon}
+              className="p-8 rounded-2xl border border-slate-800 bg-slate-900/30 hover:border-[#10B981]/30 transition-colors"
+            >
+              <div className="flex items-center justify-center size-12 rounded-xl bg-[#10B981]/10 mb-6">
+                <span className="material-symbols-outlined text-2xl text-[#10B981]">
+                  {d.icon}
+                </span>
+              </div>
+              <h3 className="text-lg font-bold mb-3">{d.title}</h3>
+              <p className="text-sm text-slate-400 leading-relaxed">{d.desc}</p>
+            </div>
+          ))}
+        </div>
+      </section>
+
       {/* ── How It Works ── */}
       <section id="how-it-works" className="max-w-6xl mx-auto px-6 py-24">
         <h2 className="text-3xl md:text-4xl font-black text-center mb-16">
@@ -278,26 +298,6 @@ export default function LandingPage() {
               <p className="text-sm text-slate-400 leading-relaxed max-w-xs">
                 {step.desc}
               </p>
-            </div>
-          ))}
-        </div>
-      </section>
-
-      {/* ── Why SimWork ── */}
-      <section className="max-w-6xl mx-auto px-6 py-24">
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-          {DIFFERENTIATORS.map((d) => (
-            <div
-              key={d.icon}
-              className="p-8 rounded-2xl border border-slate-800 bg-slate-900/30 hover:border-[#10B981]/30 transition-colors"
-            >
-              <div className="flex items-center justify-center size-12 rounded-xl bg-[#10B981]/10 mb-6">
-                <span className="material-symbols-outlined text-2xl text-[#10B981]">
-                  {d.icon}
-                </span>
-              </div>
-              <h3 className="text-lg font-bold mb-3">{d.title}</h3>
-              <p className="text-sm text-slate-400 leading-relaxed">{d.desc}</p>
             </div>
           ))}
         </div>
