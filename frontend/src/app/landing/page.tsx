@@ -139,9 +139,7 @@ function DemoForm() {
   );
 }
 
-function CTASection() {
-  const [showForm, setShowForm] = useState(false);
-
+function CTASection({ showForm, setShowForm }: { showForm: boolean; setShowForm: (v: boolean) => void }) {
   return (
     <section id="cta" className="max-w-4xl mx-auto px-6 py-24">
       <div className="relative rounded-2xl overflow-hidden">
@@ -182,6 +180,13 @@ function CTASection() {
 }
 
 export default function LandingPage() {
+  const [showDemoForm, setShowDemoForm] = useState(false);
+
+  const openDemoForm = () => {
+    setShowDemoForm(true);
+    document.getElementById("cta")?.scrollIntoView({ behavior: "smooth" });
+  };
+
   return (
     <div className="min-h-screen text-white" style={BG_STYLE}>
       {/* ── Nav ── */}
@@ -232,12 +237,12 @@ export default function LandingPage() {
           </p>
 
           <div className="flex flex-col sm:flex-row items-center justify-center gap-4 mb-8">
-            <a
-              href="#cta"
+            <button
+              onClick={openDemoForm}
               className="rounded-xl px-8 py-4 bg-[#10B981] text-base font-bold shadow-lg shadow-[#10B981]/25 hover:shadow-[#10B981]/40 transition-shadow"
             >
               Request a Demo
-            </a>
+            </button>
             <a
               href="#how-it-works"
               className="rounded-xl px-8 py-4 border border-slate-700 text-slate-300 text-base font-semibold hover:border-[#10B981]/50 hover:text-white transition-colors"
@@ -320,7 +325,7 @@ export default function LandingPage() {
       </section>
 
       {/* ── CTA ── */}
-      <CTASection />
+      <CTASection showForm={showDemoForm} setShowForm={setShowDemoForm} />
 
       {/* ── Footer ── */}
       <footer className="border-t border-slate-800 py-8 px-6">
