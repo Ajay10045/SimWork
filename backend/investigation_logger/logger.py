@@ -11,6 +11,7 @@ from typing import Any
 import os
 
 DB_PATH = Path(os.environ.get("SIMWORK_DB_PATH", Path(__file__).resolve().parent.parent / "simwork.db"))
+APP_USERS_TABLE = "app_users"
 
 
 def _get_conn() -> sqlite3.Connection:
@@ -62,6 +63,21 @@ def _ensure_sessions_columns(conn: sqlite3.Connection) -> None:
     for column, data_type in wanted.items():
         if column not in existing:
             conn.execute(f"ALTER TABLE sessions ADD COLUMN {column} {data_type}")
+
+
+def _ensure_app_users_table(conn: sqlite3.Connection) -> None:
+    conn.execute(
+        f"""
+        CREATE TABLE IF NOT EXISTS {APP_USERS_TABLE} (
+            id TEXT PRIMARY KEY,
+            email TEXT NOT NULL UNIQUE,
+            name TEXT,
+            picture TEXT,
+            created_at TEXT NOT NULL,
+            last_login_at TEXT NOT NULL
+        )
+        """
+    )
 
 
 def init_db() -> None:
@@ -149,19 +165,12 @@ def init_db() -> None:
             FOREIGN KEY (session_id) REFERENCES sessions(session_id)
         );
 
-        CREATE TABLE IF NOT EXISTS users (
-            id TEXT PRIMARY KEY,
-            email TEXT NOT NULL UNIQUE,
-            name TEXT,
-            picture TEXT,
-            created_at TEXT NOT NULL,
-            last_login_at TEXT NOT NULL
-        );
         """
     )
     _ensure_query_log_columns(conn)
     _ensure_submissions_columns(conn)
     _ensure_sessions_columns(conn)
+    _ensure_app_users_table(conn)
     conn.commit()
     conn.close()
 
@@ -187,10 +196,11 @@ def clear_all_session_data() -> None:
 def upsert_user(user_id: str, email: str, name: str | None = None, picture: str | None = None) -> None:
     """Insert a new user or update last_login_at for an existing one."""
     conn = _get_conn()
+    _ensure_app_users_table(conn)
     now = _utcnow()
     conn.execute(
         """
-        INSERT INTO users (id, email, name, picture, created_at, last_login_at)
+        INSERT INTO app_users (id, email, name, picture, created_at, last_login_at)
         VALUES (?, ?, ?, ?, ?, ?)
         ON CONFLICT(id) DO UPDATE SET
             email = excluded.email,
@@ -207,7 +217,8 @@ def upsert_user(user_id: str, email: str, name: str | None = None, picture: str 
 def get_user(user_id: str) -> dict[str, Any] | None:
     """Get a user by ID."""
     conn = _get_conn()
-    row = conn.execute("SELECT * FROM users WHERE id = ?", (user_id,)).fetchone()
+    _ensure_app_users_table(conn)
+    row = conn.execute(f"SELECT * FROM {APP_USERS_TABLE} WHERE id = ?", (user_id,)).fetchone()
     conn.close()
     if row is None:
         return None

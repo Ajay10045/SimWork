@@ -1,4 +1,12 @@
-const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
+function normalizeApiBase(url: string): string {
+  const trimmed = url.trim().replace(/\/+$/, "");
+  if (trimmed.endsWith("/api/v1")) {
+    return trimmed.slice(0, -"/api/v1".length);
+  }
+  return trimmed;
+}
+
+const API_BASE = normalizeApiBase(process.env.NEXT_PUBLIC_API_URL ?? "http://127.0.0.1:8000");
 const PREFIX = "/api/v1";
 
 let _authToken: string | null = null;
@@ -12,10 +20,16 @@ async function fetchJSON<T>(path: string, init?: RequestInit): Promise<T> {
   if (_authToken) {
     headers["Authorization"] = `Bearer ${_authToken}`;
   }
-  const res = await fetch(`${API_BASE}${path}`, {
-    headers,
-    ...init,
-  });
+  let res: Response;
+  try {
+    res = await fetch(`${API_BASE}${path}`, {
+      headers,
+      ...init,
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Unknown network error";
+    throw new Error(`Cannot reach backend at ${API_BASE}${path}: ${message}`);
+  }
   if (res.status === 401 && typeof window !== "undefined") {
     window.location.href = "/login";
     throw new Error("Session expired");
