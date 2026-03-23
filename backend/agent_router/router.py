@@ -34,7 +34,7 @@ PLAN_SCHEMA = {
     "question_understanding": "Short summary of the user's ask",
     "complexity": "single_query | multi_step",
     "sub_questions": ["Optional sub-question"],
-    "target_tables": ["Allowed source name such as orders"],
+    "target_tables": ["Allowed source name from the provided metadata"],
     "stop_condition": "What evidence is enough to answer",
     "next_steps": ["Follow-up the user might ask next"],
     "needs_clarification": False,
@@ -178,7 +178,8 @@ def route_query(
 
     all_llm_calls.extend(loop_llm_calls)
     _emit("synthesizing", "Composing final answer...")
-    artifacts, citations = _build_artifacts_and_citations(evidence, agent)
+    artifacts, citations, artifact_llm_calls = _build_artifacts_and_citations(evidence, agent, user_query=original_query, llm=llm)
+    all_llm_calls.extend(artifact_llm_calls)
     response, synth_llm_call = _synthesize_response(
         llm=llm,
         agent=agent,
@@ -246,6 +247,8 @@ def _plan_investigation(
         "previous query — combine the prior context with the current request to form a complete plan. "
         "Do not ask for clarification when the conversation history provides sufficient context. "
         "Ask a clarifying question only when the ambiguity materially changes the SQL plan or answer semantics. "
+        "When the user asks about categories or stages from a table, check the distinct_value_previews in the metadata "
+        "to see all available values. Default to including ALL values rather than guessing a subset. "
         "Ask one clarifying question at a time, prefer 2-3 suggested answers for common ambiguities, "
         "always allow free-text clarification, and do not ask more questions if the clarification budget is exhausted. "
         "Return JSON only."
@@ -419,22 +422,29 @@ def _choose_next_action(
         "\n\nYou are in an investigation loop. "
         "Choose the next best step to answer the question. "
         "If the user mentioned a segment or category that might match a low-cardinality column, check metadata or run a small discovery query before asking for clarification. "
-        "For trend or time-series questions, use answer_mode=chart and query the full available date range unless the user explicitly asks for a narrower window. "
-        "Choose answer_mode and chart_type based on query intent: "
-        "use answer_mode=metric for single-value questions (total, first, max, which X); "
-        "use chart_type=line for trends over time; "
-        "use chart_type=bar for categorical comparisons and rankings; "
-        "use chart_type=funnel for sequential stage drop-off; "
-        "use chart_type=pie for proportions/share of total (only when ≤8 categories); "
-        "use chart_type=scatter when the user asks about correlation between two numeric variables; "
-        "use chart_type=heatmap for matrix/cross-tab/cohort data; "
-        "use chart_type=histogram when showing distribution of a single numeric variable; "
-        "use chart_type=box for statistical spread (min/max/quartiles); "
-        "use chart_type=dual_axis_line when comparing two metrics with very different scales on the same time axis. "
+        "For trend or time-series questions, query the full available date range unless the user explicitly asks for a narrower window. "
         "Do not add arbitrary recent-day limits to trend queries. "
+        "Set answer_mode=metric for single-value questions (total, first, max, which X). "
+        "For all other queries, answer_mode and chart_type are optional hints — "
+        "the visualization layer will automatically choose the best rendering based on the data shape and user intent. "
+        "When the user compares categories, segments, or time periods (e.g., 'A vs B', 'by region', 'month over month'), "
+        "prefer long-format SQL output with a label column, a category column, and a value column. "
+        "Example: SELECT step AS label, month AS category, rate AS value ... "
+        "This shape enables automatic pivoting into grouped charts. "
+        "Avoid wide-format output with one column per category (e.g., jan_rate, dec_rate) as it prevents chart rendering. "
         "For weekly aggregations in SQLite, always use strftime('%Y-%m-%d', date_col, 'weekday 0', '-6 days') "
         "to get the Monday (week start) date, and GROUP BY that expression. "
         "Do NOT use strftime('%W') or strftime('%Y-W%W') as these create duplicates at year boundaries. "
+        "For tables with a low-cardinality categorical column (check distinct_value_previews in metadata), "
+        "prefer simple GROUP BY queries that return ALL values of that column — do not filter to a subset "
+        "unless the user explicitly names specific values. "
+        "For funnel/stage/category breakdowns, return the category and the count — "
+        "the visualization layer handles ordering, drop-off, and formatting automatically. "
+        "Do NOT compute derived columns (drop-off counts, percentages) in SQL. "
+        "Avoid CTEs, UNION ALL, and ORDER BY CASE — a simple GROUP BY is sufficient. "
+        "For period comparison, use a CASE expression on a date/timestamp column to create a period label, "
+        "then GROUP BY category, period — this produces the long-format "
+        "that auto-pivots into grouped charts. "
         "Use action=python when the question requires transformations SQL cannot easily express: "
         "rolling averages, percentiles, percentage-of-total, complex pivots, multi-step reshaping. "
         "When using action=python, provide BOTH sql (to fetch raw data) and python_code (pandas transformation). "
@@ -481,6 +491,7 @@ def _execute_sql_step(
             "status": "error",
             "kind": "sql",
             "title": action.get("title") or "SQL attempt",
+            "reason": action.get("reason", ""),
             "answer_mode": action.get("answer_mode", "table"),
             "chart_type": action.get("chart_type"),
             "sql": sql,
@@ -494,6 +505,7 @@ def _execute_sql_step(
         "status": "success",
         "kind": "sql",
         "title": action.get("title") or "SQL result",
+        "reason": action.get("reason", ""),
         "answer_mode": action.get("answer_mode", "table"),
         "chart_type": action.get("chart_type"),
         "sql": result["executed_sql"],
@@ -527,6 +539,7 @@ def _execute_python_step(
             "status": "error",
             "kind": "python",
             "title": action.get("title") or "Python attempt",
+            "reason": action.get("reason", ""),
             "answer_mode": action.get("answer_mode", "table"),
             "chart_type": action.get("chart_type"),
             "sql": sql,
@@ -550,6 +563,7 @@ def _execute_python_step(
             "status": "error",
             "kind": "python",
             "title": action.get("title") or "Python attempt",
+            "reason": action.get("reason", ""),
             "answer_mode": action.get("answer_mode", "table"),
             "chart_type": action.get("chart_type"),
             "sql": sql,
@@ -565,6 +579,7 @@ def _execute_python_step(
         "status": "success",
         "kind": "python",
         "title": action.get("title") or "Python result",
+        "reason": action.get("reason", ""),
         "answer_mode": action.get("answer_mode", "table"),
         "chart_type": action.get("chart_type"),
         "sql": sql,
@@ -591,19 +606,25 @@ def _critic_check(
     sql = record.get("sql") or action.get("sql") or ""
 
     system = (
-        "You are a SQL/code quality reviewer. Given a user question and the SQL query "
-        "(and optional Python/pandas code) that was generated to answer it, determine if "
-        "the code is logically correct.\n\n"
-        "Only reject if there is a CLEAR, SPECIFIC error such as:\n"
-        "- Syntax errors in SQL or Python code\n"
-        "- Wrong GROUP BY granularity (e.g., daily when weekly was asked, or vice versa)\n"
-        "- Missing or incorrect JOIN conditions that would produce wrong results\n"
+        "You are a SQL/code correctness checker. Your ONLY job is to catch things that will "
+        "produce WRONG NUMBERS. You are NOT a methodology reviewer.\n\n"
+        "REJECT only for:\n"
+        "- SQL syntax errors that would cause execution failure\n"
+        "- Wrong JOIN conditions (missing ON clause, joining on wrong columns)\n"
+        "- Wrong aggregation function (SUM instead of COUNT, AVG instead of SUM)\n"
         "- Filters that exclude data the user explicitly asked about\n"
-        "- Week grouping using strftime('%W') or '%Y-W%W' instead of week-start dates\n"
-        "- Aggregation errors (e.g., SUM when COUNT was needed)\n\n"
-        "Do NOT reject for stylistic preferences, minor optimizations, or speculative issues.\n"
-        "When in doubt, mark it acceptable. The bar for rejection should be high — "
-        "only reject when the query will produce WRONG results for the user's question.\n\n"
+        "- GROUP BY that changes the granularity the user asked for (daily vs weekly)\n"
+        "- Week grouping using strftime('%W') or '%Y-W%W' instead of week-start dates\n\n"
+        "ACCEPT — do NOT reject for:\n"
+        "- Analytical methodology choices (e.g., independent counts vs sequential funnel)\n"
+        "- Stylistic preferences (CTE vs subquery, COUNT(*) vs COUNT(col))\n"
+        "- 'Could be better' suggestions — if it returns correct numbers, accept it\n"
+        "- Date anchoring using MAX(date_col) or hardcoded dates from the data\n"
+        "- Missing optimizations or indexes\n\n"
+        "The visualization layer handles ordering, formatting, drop-off calculations, "
+        "and chart rendering automatically. Do not reject because the output shape "
+        "isn't ideal for display — that is handled downstream.\n\n"
+        "Default to ACCEPT. When in doubt, ACCEPT.\n\n"
         "Respond with JSON only: {\"acceptable\": true/false, \"reason\": \"...\", \"suggested_fix\": \"...\"}"
     )
 
@@ -686,6 +707,7 @@ def _execute_document_step(
         "status": "success",
         "kind": "document",
         "title": action.get("title") or source,
+        "reason": action.get("reason", ""),
         "answer_mode": "table",
         "sql": None,
         "sources": [source],
@@ -693,6 +715,35 @@ def _execute_document_step(
         "rows": rows,
         "truncated": len(rows) >= MAX_TABLE_RESULT_ROWS,
     }
+
+
+def _friendly_failure_message(warnings: list[str]) -> str:
+    """Turn raw warnings into a human-friendly failure explanation."""
+    if not warnings:
+        return "I wasn't able to find the data needed to answer that. Could you try rephrasing the question or asking about a specific table?"
+
+    combined = " ".join(w.lower() for w in warnings)
+
+    if "unauthorized" in combined or "not allowed" in combined:
+        return "I don't have access to the data source needed for this question. You could try asking about a different table, or rephrase your question to use the data I do have access to."
+
+    if "no such column" in combined:
+        return "The column I tried to query doesn't exist in this table. Could you check the available columns and try a more specific question?"
+
+    if "no such table" in combined:
+        return "The table I tried to query doesn't exist. You can ask me which tables I have access to, and I'll work from there."
+
+    if "syntax error" in combined or "sql error" in combined:
+        return "I had trouble generating the right query for this. Could you try simplifying the question or breaking it into smaller parts?"
+
+    if "returned no rows" in combined or "no rows" in combined:
+        return "The query ran but returned no matching data. You might want to try a broader date range or different filters."
+
+    if "attempt limit" in combined:
+        return "I tried multiple approaches but couldn't get the right result. Could you try rephrasing the question or breaking it into simpler parts?"
+
+    # Default: don't dump raw warning text
+    return "I wasn't able to complete this query. Try rephrasing the question or breaking it into smaller steps — that usually helps me get to the right answer."
 
 
 def _synthesize_response(
@@ -734,10 +785,8 @@ def _synthesize_response(
                     return text, llm_call
             except Exception as exc:
                 logger.warning("Shared-context synthesis failed: %s", exc)
-        bounded_warning = next((warning for warning in reversed(warnings) if "attempt limit" in warning.lower()), None)
-        if warnings:
-            return (bounded_warning or warnings[0]), None
-        return "I could not find enough evidence in my allowed sources to answer that.", None
+        # Generate a human-friendly failure message instead of dumping raw warnings
+        return _friendly_failure_message(warnings), None
 
     system = _role_system_prompt(agent, role) + (
         "\n\nWrite a concise (3-4 lines), evidence-grounded answer with specific numbers from the data. "
@@ -793,7 +842,7 @@ def _role_system_prompt(agent: str, role: dict[str, Any]) -> str:
     tables = ", ".join(role.get("allowed_tables", []))
     skills = ", ".join(role.get("skills", []))
     return (
-        f"You are {role_name} for ZaikaNow.\n"
+        f"You are {role_name}.\n"
         f"Persona: {persona}\n"
         f"Allowed database tables: {tables or 'None'}\n"
         f"Allowed documents: {', '.join(role.get('allowed_documents', [])) or 'None'}\n"
@@ -934,9 +983,10 @@ def _generic_plan(source_metadata: list[dict[str, Any]]) -> dict[str, Any]:
     }
 
 
-def _build_artifacts_and_citations(evidence: list[dict[str, Any]], agent: str) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+def _build_artifacts_and_citations(evidence: list[dict[str, Any]], agent: str, user_query: str = "", llm: LLMClient | None = None) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]]]:
     artifacts: list[dict[str, Any]] = []
     citations: list[dict[str, Any]] = []
+    llm_calls: list[dict[str, Any]] = []
     for item in evidence:
         citation = {
             "citation_id": item["evidence_id"],
@@ -945,16 +995,151 @@ def _build_artifacts_and_citations(evidence: list[dict[str, Any]], agent: str) -
             "summary": item["summary"],
         }
         citations.append(citation)
-        artifacts.append(_artifact_from_evidence(item, citation["citation_id"], agent))
-    return artifacts, citations
+        artifact, trace_calls = _artifact_from_evidence(item, citation["citation_id"], agent, user_query=user_query, llm=llm)
+        artifacts.append(artifact)
+        llm_calls.extend(trace_calls)
+    return artifacts, citations, llm_calls
 
 
-def _artifact_from_evidence(item: dict[str, Any], citation_id: str, agent: str) -> dict[str, Any]:
+def _generate_vega_lite_spec(
+    user_query: str,
+    columns: list[str],
+    rows: list[dict[str, Any]],
+    llm: LLMClient,
+    suggested_chart_type: str = "",
+) -> tuple[dict[str, Any] | None, dict[str, Any]]:
+    """Ask the LLM to produce a complete Vega-Lite spec for the data.
+
+    Returns (vega_spec, trace_record).  vega_spec is a complete Vega-Lite v5
+    JSON dict with data embedded, or a dict with ``chart_type`` set to
+    ``"table"`` or ``"ask_user"`` for non-chart results.
+    Returns (None, trace_record) on failure.
+    """
+    system = (
+        "You are a data-visualization expert. Given a user question and SQL result "
+        "columns + sample rows, return a COMPLETE Vega-Lite v5 JSON spec that best "
+        "answers the question visually.\n\n"
+        "RULES:\n"
+        "1. Return ONLY valid JSON — no markdown fences, no explanation.\n"
+        "2. The top-level object MUST contain '$schema': 'https://vega.github.io/schema/vega-lite/v5.json'.\n"
+        "3. Embed the data via the 'data' key: {\"data\": {\"values\": \"__DATA__\"}}.\n"
+        "   Use the literal string \"__DATA__\" as a placeholder — the system will inject the real rows.\n"
+        "4. Use these dark-theme defaults in a top-level 'config' key:\n"
+        '   {"config": {"background": "transparent", "view": {"stroke": "transparent"},\n'
+        '    "axis": {"labelColor": "#94a3b8", "titleColor": "#94a3b8", "gridColor": "#1e293b", "domainColor": "#334155"},\n'
+        '    "legend": {"labelColor": "#94a3b8", "titleColor": "#94a3b8"},\n'
+        '    "title": {"color": "#e2e8f0"}}}\n'
+        "5. Use width 'container' and height between 200-300.\n"
+        "6. Preferred color palette (in order): #10B981, #38BDF8, #F59E0B, #A855F7, #EC4899, #EF4444.\n"
+        "   Set explicit scale range when using color encoding.\n"
+        "7. NO custom JavaScript expressions. Pure declarative JSON only.\n\n"
+        "CHART SELECTION GUIDELINES:\n"
+        "- Time series → line chart (temporal X axis)\n"
+        "- Categorical comparison → bar chart\n"
+        "- Funnel / stage data → horizontal bar chart with stages on Y axis, sorted by logical process order "
+        "(NOT by value). Use 'sort' on the Y encoding with an explicit stage order array.\n"
+        "- Funnel comparison across periods → use 'facet' or 'row'/'column' encoding to show separate "
+        "sub-charts per period, each with stages on Y and counts on X.\n"
+        "- Distribution → histogram\n"
+        "- Part-of-whole → arc (pie/donut) mark\n"
+        "- Correlation → scatter / point mark\n"
+        "- Two metrics with very different scales → layer with independent Y axes (resolve: {scale: {y: 'independent'}})\n\n"
+        "SPECIAL RETURN VALUES (instead of a Vega-Lite spec):\n"
+        '- If data is genuinely tabular with no visual pattern, return: {"chart_type": "table"}\n'
+        '- If query is ambiguous and you cannot determine what to plot, return: '
+        '{"chart_type": "ask_user", "clarification": "<short question>"}\n\n'
+        "Prefer charts over tables. Most analytical queries benefit from visualization.\n"
+    )
+    # Send only a sample to the LLM — the full data is injected later
+    sample = rows[:8]
+    payload_dict: dict[str, Any] = {
+        "question": user_query,
+        "columns": columns,
+        "sample_rows": sample,
+        "total_rows": len(rows),
+    }
+    if suggested_chart_type:
+        payload_dict["suggested_chart_type"] = suggested_chart_type
+    payload = json.dumps(payload_dict, ensure_ascii=True)
+    _start = time.monotonic()
+    try:
+        result = llm.chat(system=system, user=payload)
+        duration = round((time.monotonic() - _start) * 1000)
+        trace_record = {
+            "stage": "vega_lite_generation",
+            "system_prompt": system[:600],
+            "user_payload": _truncate_payload(payload_dict),
+            "parsed_result": _truncate_payload(result),
+            "duration_ms": duration,
+        }
+        if not isinstance(result, dict):
+            trace_record["error"] = "LLM did not return a JSON object"
+            return None, trace_record
+        # Special non-chart responses
+        if result.get("chart_type") in ("table", "ask_user"):
+            return result, trace_record
+        # Validate it looks like a Vega-Lite spec
+        if result.get("$schema") or result.get("mark") or result.get("layer") or result.get("concat") or result.get("facet") or result.get("spec"):
+            # Inject actual data in place of __DATA__ placeholder
+            result = _inject_vega_data(result, rows)
+            return result, trace_record
+        trace_record["error"] = "Response is neither a Vega-Lite spec nor table/ask_user"
+        return None, trace_record
+    except Exception as exc:
+        duration = round((time.monotonic() - _start) * 1000)
+        return None, {
+            "stage": "vega_lite_generation",
+            "system_prompt": system[:600],
+            "user_payload": _truncate_payload(payload_dict),
+            "parsed_result": None,
+            "error": str(exc),
+            "duration_ms": duration,
+        }
+
+
+def _inject_vega_data(spec: dict[str, Any], rows: list[dict[str, Any]]) -> dict[str, Any]:
+    """Recursively replace ``"__DATA__"`` placeholders with actual row data."""
+    spec = dict(spec)  # shallow copy
+    if "data" in spec:
+        d = spec["data"]
+        if isinstance(d, dict) and d.get("values") == "__DATA__":
+            spec["data"] = {"values": rows}
+        elif d == "__DATA__":
+            spec["data"] = {"values": rows}
+    # Handle nested specs (facet, concat, layer, etc.)
+    for key in ("spec", "layer", "concat", "hconcat", "vconcat"):
+        if key in spec:
+            child = spec[key]
+            if isinstance(child, dict):
+                spec[key] = _inject_vega_data(child, rows)
+            elif isinstance(child, list):
+                spec[key] = [_inject_vega_data(c, rows) if isinstance(c, dict) else c for c in child]
+    return spec
+
+
+def _artifact_from_evidence(item: dict[str, Any], citation_id: str, agent: str, user_query: str = "", llm: LLMClient | None = None) -> tuple[dict[str, Any], list[dict[str, Any]]]:
     rows = item.get("rows", [])
     columns = item.get("columns", [])
     answer_mode = item.get("answer_mode", "table")
-    explicit_chart_type = _normalize_chart_type(item.get("chart_type"))
+    chart_type_hint = item.get("chart_type", "")
     numeric_columns = [col for col in columns if _column_is_numeric(rows, col)]
+    trace_calls: list[dict[str, Any]] = []
+
+    table_artifact = {
+        "kind": "table",
+        "title": item["title"],
+        "columns": columns,
+        "rows": rows,
+        "citation_ids": [citation_id],
+        "purpose": "supporting_evidence",
+        "display_mode": "board_default",
+        "source_role": agent,
+        "confidence": "medium",
+        "card_variant": "table",
+        "summary": item["summary"],
+    }
+
+    # Metric: single row, single value
     if rows and answer_mode == "metric" and len(rows) == 1 and numeric_columns:
         value_col = numeric_columns[0]
         return {
@@ -969,127 +1154,38 @@ def _artifact_from_evidence(item: dict[str, Any], citation_id: str, agent: str) 
             "confidence": "medium",
             "card_variant": "metric",
             "summary": item["summary"],
-        }
-    if rows and answer_mode == "table":
-        return {
-            "kind": "table",
-            "title": item["title"],
-            "columns": columns,
-            "rows": rows,
-            "citation_ids": [citation_id],
-            "purpose": "supporting_evidence",
-            "display_mode": "board_default",
-            "source_role": agent,
-            "confidence": "medium",
-            "card_variant": "table",
-            "summary": item["summary"],
-        }
-    if rows and len(columns) >= 2 and numeric_columns and (answer_mode == "chart" or len(rows) <= 30):
-        label_column = next((col for col in columns if col not in numeric_columns), columns[0])
-        value_columns = [col for col in numeric_columns if col != label_column]
-        if not value_columns:
-            value_columns = numeric_columns[:1]
+        }, trace_calls
 
-        # Detect long-format data that should be pivoted into multi-series.
-        # Pattern: exactly 3 columns — label, category (string), value (numeric).
-        # Example: date | platform | order_count → pivot into one series per platform.
-        non_numeric_non_label = [c for c in columns if c not in numeric_columns and c != label_column]
-        if len(value_columns) == 1 and len(non_numeric_non_label) == 1:
-            category_column = non_numeric_non_label[0]
-            val_col = value_columns[0]
-            categories = list(dict.fromkeys(str(row.get(category_column, "")) for row in rows))
-            if 2 <= len(categories) <= 8:
-                # Pivot: group by label, create one series per category
-                from collections import OrderedDict
-                label_order: list[str] = list(dict.fromkeys(str(row.get(label_column, "")) for row in rows))
-                pivoted: dict[str, dict[str, float]] = OrderedDict()
-                for lbl in label_order:
-                    pivoted[lbl] = {cat: 0.0 for cat in categories}
-                for row in rows:
-                    lbl = str(row.get(label_column, ""))
-                    cat = str(row.get(category_column, ""))
-                    pivoted[lbl][cat] = float(row.get(val_col, 0) or 0)
-                chart_type = _resolve_chart_type(
-                    explicit_chart_type=explicit_chart_type,
-                    rows=rows,
-                    label_column=label_column,
-                    value_columns=[val_col],
-                )
-                label_order = _normalize_week_labels(label_order)
-                series = [
-                    {"name": cat, "values": [pivoted[lbl][cat] for lbl in pivoted]}
-                    for cat in categories
-                ]
-                from agent_router.downsample import downsample_chart
-                label_order, series, _ds = downsample_chart(label_order, series)
-                resolved_chart_type = chart_type
-                dual_axis = False
-                if resolved_chart_type == "dual_axis_line" or (resolved_chart_type == "line" and _detect_dual_axis(series)):
-                    resolved_chart_type = "dual_axis_line"
-                    dual_axis = True
-                return {
-                    "kind": "chart",
-                    "title": item["title"],
-                    "chart_type": resolved_chart_type,
-                    "labels": label_order,
-                    "series": series,
-                    "multi_measure": False,
-                    "dual_axis": dual_axis,
-                    "citation_ids": [citation_id],
-                    "purpose": "supporting_evidence",
-                    "display_mode": "board_default",
-                    "source_role": agent,
-                    "confidence": "medium",
-                    "card_variant": "chart",
-                    "summary": item["summary"],
-                }
-
-        chart_type = _resolve_chart_type(
-            explicit_chart_type=explicit_chart_type,
-            rows=rows,
-            label_column=label_column,
-            value_columns=value_columns,
+    # LLM decides display: Vega-Lite chart, table, or ask_user — no answer_mode gate
+    if rows and len(columns) >= 2 and numeric_columns and llm and user_query:
+        vega_spec, vega_trace = _generate_vega_lite_spec(
+            user_query, columns, rows, llm,
+            suggested_chart_type=chart_type_hint or "",
         )
-        labels_list = _normalize_week_labels([str(row.get(label_column, "")) for row in rows])
-        series = [
-            {"name": col, "values": [float(row.get(col, 0) or 0) for row in rows]}
-            for col in value_columns
-        ]
-        from agent_router.downsample import downsample_chart
-        labels_list, series, _ds = downsample_chart(labels_list, series)
-        dual_axis = False
-        if chart_type == "dual_axis_line" or (chart_type == "line" and _detect_dual_axis(series)):
-            chart_type = "dual_axis_line"
-            dual_axis = True
-        return {
-            "kind": "chart",
-            "title": item["title"],
-            "chart_type": chart_type,
-            "labels": labels_list,
-            "series": series,
-            "multi_measure": len(value_columns) > 1,
-            "dual_axis": dual_axis,
-            "citation_ids": [citation_id],
-            "purpose": "supporting_evidence",
-            "display_mode": "board_default",
-            "source_role": agent,
-            "confidence": "medium",
-            "card_variant": "chart",
-            "summary": item["summary"],
-        }
-    return {
-        "kind": "table",
-        "title": item["title"],
-        "columns": columns,
-        "rows": rows,
-        "citation_ids": [citation_id],
-        "purpose": "supporting_evidence",
-        "display_mode": "board_default",
-        "source_role": agent,
-        "confidence": "medium",
-        "card_variant": "table",
-        "summary": item["summary"],
-    }
+        trace_calls.append(vega_trace)
+        if vega_spec:
+            if vega_spec.get("chart_type") == "table":
+                return table_artifact, trace_calls
+            if vega_spec.get("chart_type") == "ask_user":
+                table_artifact["display_clarification"] = vega_spec.get("clarification", "How would you like this data displayed?")
+                return table_artifact, trace_calls
+            # Return a vega_chart artifact
+            return {
+                "kind": "vega_chart",
+                "title": item["title"],
+                "vega_spec": vega_spec,
+                "citation_ids": [citation_id],
+                "purpose": "supporting_evidence",
+                "display_mode": "board_default",
+                "source_role": agent,
+                "confidence": "medium",
+                "card_variant": "chart",
+                "summary": item["summary"],
+                "columns": columns,
+                "rows": rows[:200],
+            }, trace_calls
+
+    return table_artifact, trace_calls
 
 
 def _structured_evidence_response(query: str, evidence: list[dict[str, Any]]) -> str | None:
@@ -1213,56 +1309,6 @@ def _normalize_chart_type(value: Any) -> str | None:
     if chart_type in _VALID_CHART_TYPES:
         return chart_type
     return None
-
-
-def _resolve_chart_type(
-    explicit_chart_type: str | None,
-    rows: list[dict[str, Any]],
-    label_column: str,
-    value_columns: list[str],
-) -> str:
-    inferred = "line" if _looks_like_time_column(rows, label_column) else "bar"
-    if explicit_chart_type == "funnel":
-        if len(value_columns) == 1 and len(rows) >= 2:
-            return "funnel"
-        return inferred
-    if explicit_chart_type == "pie":
-        if len(value_columns) == 1 and 2 <= len(rows) <= 8:
-            return "pie"
-        return inferred
-    if explicit_chart_type == "scatter":
-        if len(value_columns) >= 2:
-            return "scatter"
-        return inferred
-    if explicit_chart_type in {"heatmap", "histogram", "box"}:
-        return explicit_chart_type
-    if explicit_chart_type == "dual_axis_line":
-        if len(value_columns) >= 2:
-            return "dual_axis_line"
-        return "line"
-    if explicit_chart_type in {"bar", "line"}:
-        return explicit_chart_type
-    return inferred
-
-
-def _detect_dual_axis(series: list[dict[str, Any]]) -> bool:
-    """Return True when two series have values differing by more than 10x in magnitude."""
-    if len(series) != 2:
-        return False
-    def _max_abs(values: list) -> float:
-        nums = [abs(v) for v in values if isinstance(v, (int, float)) and v is not None]
-        return max(nums) if nums else 0.0
-    mag_a = _max_abs(series[0].get("values", []))
-    mag_b = _max_abs(series[1].get("values", []))
-    if mag_a == 0 or mag_b == 0:
-        return False
-    ratio = max(mag_a, mag_b) / min(mag_a, mag_b)
-    return ratio >= 10
-
-
-def _looks_like_time_column(rows: list[dict[str, Any]], column: str) -> bool:
-    values = [str(row.get(column, "")) for row in rows[:3]]
-    return all(any(char.isdigit() for char in value) and ("-" in value or ":" in value) for value in values if value)
 
 
 def _column_is_numeric(rows: list[dict[str, Any]], column: str) -> bool:

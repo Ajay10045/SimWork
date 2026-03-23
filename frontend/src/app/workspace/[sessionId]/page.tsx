@@ -268,24 +268,86 @@ function MetricArtifactView({ artifact }: { artifact: Extract<Artifact, { kind: 
 }
 
 function BarChart({ artifact }: { artifact: Extract<Artifact, { kind: "chart" }> }) {
-  const series = artifact.series[0];
-  if (!series || artifact.labels.length === 0) return null;
-  const values = series.values;
-  const max = Math.max(...values, 1);
-  return (
-    <div className="flex flex-col gap-2">
-      {artifact.labels.map((label, index) => {
-        const value = values[index] ?? 0;
-        const pct = Math.max(6, (value / max) * 100);
-        return (
-          <div key={`${label}-${index}`} className="flex items-center gap-3">
-            <span className="w-28 shrink-0 truncate text-[11px] text-slate-500">{label}</span>
-            <div className="flex-1 h-4 rounded-full bg-slate-200 dark:bg-slate-800 overflow-hidden">
-              <div className="h-full rounded-full bg-gradient-to-r from-emerald-500 to-emerald-300" style={{ width: `${pct}%` }} />
+  if (!artifact.series.length || artifact.labels.length === 0) return null;
+  const multiSeries = artifact.series.length > 1;
+  const allValues = artifact.series.flatMap(s => s.values);
+  const max = Math.max(...allValues, 1);
+  const colors = [
+    { bar: "from-emerald-500 to-emerald-300", dot: "bg-emerald-500" },
+    { bar: "from-blue-500 to-blue-300", dot: "bg-blue-500" },
+    { bar: "from-amber-500 to-amber-300", dot: "bg-amber-500" },
+    { bar: "from-purple-500 to-purple-300", dot: "bg-purple-500" },
+    { bar: "from-rose-500 to-rose-300", dot: "bg-rose-500" },
+    { bar: "from-cyan-500 to-cyan-300", dot: "bg-cyan-500" },
+  ];
+  const unitSuffix = artifact.unit ? artifact.unit : "";
+  const formatVal = (v: number) => {
+    const s = typeof v === "number" && v % 1 !== 0 ? v.toFixed(1) : v.toLocaleString();
+    return unitSuffix ? `${s}${unitSuffix}` : s;
+  };
+
+  if (!multiSeries) {
+    const series = artifact.series[0];
+    return (
+      <div className="flex flex-col gap-2">
+        {artifact.labels.map((label, index) => {
+          const value = series.values[index] ?? 0;
+          const pct = Math.max(6, (value / max) * 100);
+          return (
+            <div key={`${label}-${index}`} className="flex items-center gap-3">
+              <span className="w-28 shrink-0 truncate text-[11px] text-slate-500">{label}</span>
+              <div className="flex-1 h-4 rounded-full bg-slate-200 dark:bg-slate-800 overflow-hidden">
+                <div className="h-full rounded-full bg-gradient-to-r from-emerald-500 to-emerald-300" style={{ width: `${pct}%` }} />
+              </div>
+              <span className="w-16 shrink-0 text-right text-[11px] font-mono text-slate-500">
+                {formatVal(value)}
+              </span>
             </div>
-            <span className="w-16 shrink-0 text-right text-[11px] font-mono text-slate-500">
-              {value.toLocaleString()}{artifact.unit === "%" ? "%" : ""}
-            </span>
+          );
+        })}
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex flex-col gap-3">
+      <div className="flex flex-wrap gap-3 text-[11px] text-slate-500">
+        {artifact.series.map((s, i) => (
+          <span key={s.name} className="flex items-center gap-1.5">
+            <span className={`w-2.5 h-2.5 rounded-sm ${colors[i % colors.length].dot}`} />
+            {s.name}
+          </span>
+        ))}
+      </div>
+      {artifact.labels.map((label, idx) => {
+        const delta = artifact.series.length === 2
+          ? (artifact.series[1].values[idx] ?? 0) - (artifact.series[0].values[idx] ?? 0)
+          : null;
+        return (
+          <div key={`${label}-${idx}`} className="flex flex-col gap-1">
+            <div className="flex items-center justify-between">
+              <span className="text-[11px] text-slate-500 truncate">{label}</span>
+              {delta !== null && (
+                <span className={`text-[10px] font-mono ${delta >= 0 ? "text-emerald-500" : "text-red-400"}`}>
+                  {delta >= 0 ? "+" : ""}{typeof delta === "number" && delta % 1 !== 0 ? delta.toFixed(1) : delta}{unitSuffix}
+                </span>
+              )}
+            </div>
+            {artifact.series.map((s, sIdx) => {
+              const value = s.values[idx] ?? 0;
+              const pct = Math.max(6, (value / max) * 100);
+              return (
+                <div key={s.name} className="flex items-center gap-2">
+                  <span className="w-14 shrink-0 truncate text-[10px] text-slate-400">{s.name}</span>
+                  <div className="flex-1 h-3.5 rounded-full bg-slate-200 dark:bg-slate-800 overflow-hidden">
+                    <div className={`h-full rounded-full bg-gradient-to-r ${colors[sIdx % colors.length].bar}`} style={{ width: `${pct}%` }} />
+                  </div>
+                  <span className="w-16 shrink-0 text-right text-[10px] font-mono text-slate-500">
+                    {formatVal(value)}
+                  </span>
+                </div>
+              );
+            })}
           </div>
         );
       })}
@@ -333,14 +395,8 @@ function LineChart({ artifact }: { artifact: Extract<Artifact, { kind: "chart" }
   const padTop = 12;
   const padBottom = 38;
 
-  // Dual Y-axis: triggered by explicit dual_axis flag from backend OR by multi-measure with very different scales
-  const seriesMaxes = artifact.series.map((s) => Math.max(...s.values, 1));
-  const overallMax = Math.max(...seriesMaxes);
-  const overallMin = Math.min(...seriesMaxes);
-  const needsDualAxis = (artifact.dual_axis === true)
-    || (artifact.multi_measure === true
-      && artifact.series.length >= 2
-      && overallMax / Math.max(overallMin, 1) > 10);
+  // Dual Y-axis: trust the backend's LLM-driven decision
+  const needsDualAxis = artifact.dual_axis === true;
 
   const padRight = needsDualAxis ? 52 : 16;
   const plotWidth = width - padLeft - padRight;
@@ -355,6 +411,8 @@ function LineChart({ artifact }: { artifact: Extract<Artifact, { kind: "chart" }
     return { min: mn, max: rMax, range: rng };
   }
 
+  const seriesMaxes = artifact.series.map((s) => Math.max(...s.values.map(Math.abs), 0));
+  const overallMax = Math.max(...seriesMaxes, 1);
   const threshold = overallMax / 5;
   const primaryIndices = needsDualAxis
     ? artifact.series.map((_, i) => i).filter((i) => seriesMaxes[i] >= threshold)
@@ -492,13 +550,16 @@ function LineChart({ artifact }: { artifact: Extract<Artifact, { kind: "chart" }
   );
 }
 
-function FunnelChart({ artifact }: { artifact: Extract<Artifact, { kind: "chart" }> }) {
-  const series = artifact.series[0];
-  if (!series || artifact.labels.length === 0) return null;
+function SingleFunnel({ labels, series, color }: {
+  labels: string[];
+  series: { name: string; values: number[] };
+  color: { from: string; to: string };
+}) {
   const max = Math.max(series.values[0] || 1, 1);
   return (
     <div className="space-y-2">
-      {artifact.labels.map((label, index) => {
+      <span className="text-[11px] font-medium text-zinc-300">{series.name}</span>
+      {labels.map((label, index) => {
         const value = series.values[index] ?? 0;
         const previous = index === 0 ? null : series.values[index - 1];
         const pct = Math.max(18, (value / max) * 100);
@@ -506,7 +567,7 @@ function FunnelChart({ artifact }: { artifact: Extract<Artifact, { kind: "chart"
         return (
           <div key={`${label}-${index}`} className="flex flex-col items-center">
             <div
-              className="h-7 rounded-lg bg-gradient-to-r from-emerald-600 to-emerald-400 flex items-center justify-between px-3 text-white text-[11px] w-full"
+              className={`h-7 rounded-lg bg-gradient-to-r ${color.from} ${color.to} flex items-center justify-between px-3 text-white text-[11px] w-full`}
               style={{ width: `${pct}%` }}
             >
               <span className="truncate">{label}</span>
@@ -516,6 +577,29 @@ function FunnelChart({ artifact }: { artifact: Extract<Artifact, { kind: "chart"
           </div>
         );
       })}
+    </div>
+  );
+}
+
+function FunnelChart({ artifact }: { artifact: Extract<Artifact, { kind: "chart" }> }) {
+  if (!artifact.series.length || artifact.labels.length === 0) return null;
+  const palette = [
+    { from: "from-emerald-600", to: "to-emerald-400" },
+    { from: "from-blue-600", to: "to-blue-400" },
+    { from: "from-amber-600", to: "to-amber-400" },
+    { from: "from-purple-600", to: "to-purple-400" },
+  ];
+
+  if (artifact.series.length === 1) {
+    return <SingleFunnel labels={artifact.labels} series={artifact.series[0]} color={palette[0]} />;
+  }
+
+  // ── Multi-series: separate funnels stacked vertically ──
+  return (
+    <div className="space-y-5">
+      {artifact.series.map((s, si) => (
+        <SingleFunnel key={s.name} labels={artifact.labels} series={s} color={palette[si % palette.length]} />
+      ))}
     </div>
   );
 }
@@ -685,6 +769,13 @@ function TableArtifactView({ artifact }: { artifact: Extract<Artifact, { kind: "
   );
 
   return (
+    <div className="space-y-2">
+      {artifact.display_clarification && (
+        <div className="flex items-start gap-2 rounded-lg bg-amber-500/10 border border-amber-500/20 p-3">
+          <span className="material-symbols-outlined text-amber-500 text-[16px] mt-0.5">help</span>
+          <p className="text-[12px] text-amber-600 dark:text-amber-400">{artifact.display_clarification}</p>
+        </div>
+      )}
     <div className="overflow-x-auto rounded-xl border border-slate-200 dark:border-slate-700/50">
       <table className="min-w-full text-left text-xs">
         <thead className="bg-slate-50 dark:bg-slate-800/40 text-slate-500 uppercase tracking-wide">
@@ -709,6 +800,7 @@ function TableArtifactView({ artifact }: { artifact: Extract<Artifact, { kind: "
           ))}
         </tbody>
       </table>
+    </div>
     </div>
   );
 }
@@ -919,6 +1011,16 @@ function QueryLogModal({
                         </div>
                       </div>
                     )}
+                    {Array.isArray(detail.planner.sub_questions) && detail.planner.sub_questions.length > 0 && (
+                      <div>
+                        <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider mb-1">Steps</p>
+                        <ol className="space-y-0.5 list-decimal list-inside">
+                          {(detail.planner.sub_questions as string[]).map((sq, i) => (
+                            <li key={i} className="text-[11px] text-slate-500 dark:text-slate-400">{sq}</li>
+                          ))}
+                        </ol>
+                      </div>
+                    )}
                     {detail.planner.stop_condition && (
                       <p className="text-slate-400 dark:text-slate-500 text-[11px] italic">Stop: {detail.planner.stop_condition as string}</p>
                     )}
@@ -943,6 +1045,9 @@ function QueryLogModal({
                     badgeColor={isSuccess ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 font-mono text-[9px]" : isRejected ? "bg-amber-500/10 text-amber-600 dark:text-amber-400 font-mono text-[9px]" : "bg-red-500/10 text-red-600 font-mono text-[9px]"}
                   >
                     <div className="space-y-2">
+                      {typeof attempt.reason === "string" && attempt.reason && (
+                        <p className="text-[11px] text-slate-500 dark:text-slate-400 italic">{String(attempt.reason)}</p>
+                      )}
                       {attempt.sql && (
                         <pre className="p-2 rounded bg-slate-900 dark:bg-slate-950 text-emerald-400 text-[10px] font-mono overflow-x-auto whitespace-pre-wrap leading-relaxed">
                           {attempt.sql}
@@ -985,6 +1090,38 @@ function QueryLogModal({
                   </TraceStep>
                 );
               })}
+
+              {/* Artifact Rendering — chart inference */}
+              {(() => {
+                const chartCalls = (detail.llm_calls || []).filter((c: LLMCallRecord) => c.stage === "chart_inference" || c.stage === "vega_lite_generation");
+                if (!chartCalls.length) return null;
+                const call = chartCalls[0] as Record<string, unknown>;
+                const spec = call?.parsed_result as Record<string, unknown> | null;
+                const stage = String(call?.stage || "");
+                const isVega = stage === "vega_lite_generation";
+                const chartType = isVega ? (spec?.$schema ? "vega-lite" : String(spec?.chart_type || "unknown")) : String(spec?.chart_type || "unknown");
+                const durationMs = call?.duration_ms;
+                const errorMsg = spec?.error ? String(spec.error) : call?.error ? String(call.error) : "";
+                const badgeText = errorMsg ? "failed" : chartType;
+                const badgeColor = errorMsg
+                  ? "bg-red-500/10 text-red-600 font-mono text-[9px]"
+                  : "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 font-mono text-[9px]";
+                return (
+                  <TraceStep icon="show_chart" label="Artifact Rendering" badge={`${String(badgeText)}${durationMs ? ` · ${String(durationMs)}ms` : ""}`} badgeColor={badgeColor}>
+                    <div className="space-y-2">
+                      {spec && !errorMsg && (
+                        <div className="rounded-lg bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 p-3 text-[12px] space-y-1.5">
+                          <p className="text-slate-700 dark:text-slate-200 font-medium">{isVega ? "Vega-Lite spec generated" : String(chartType)}</p>
+                        </div>
+                      )}
+                      {errorMsg && (
+                        <p className="text-[11px] text-red-500 bg-red-500/10 rounded p-2">{errorMsg}</p>
+                      )}
+                      <RawLLMCalls calls={chartCalls} />
+                    </div>
+                  </TraceStep>
+                );
+              })()}
 
               {/* Final: Response */}
               <TraceStep icon="chat" label="Response" badge={`${detail.artifacts.length} artifact${detail.artifacts.length !== 1 ? "s" : ""}`} defaultOpen>
@@ -1074,12 +1211,85 @@ function ChartDataTable({ artifact }: { artifact: Extract<Artifact, { kind: "cha
   );
 }
 
+function VegaLiteChart({ spec }: { spec: Record<string, unknown> }) {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const viewRef = useRef<unknown>(null);
+
+  useEffect(() => {
+    if (!containerRef.current) return;
+    let cancelled = false;
+    import("vega-embed").then(({ default: vegaEmbed }) => {
+      if (cancelled || !containerRef.current) return;
+      vegaEmbed(containerRef.current, spec as never, {
+        actions: false,
+        renderer: "svg",
+        config: {
+          background: "transparent",
+          view: { stroke: "transparent" },
+          axis: { labelColor: "#94a3b8", titleColor: "#94a3b8", gridColor: "#1e293b", domainColor: "#334155" },
+          legend: { labelColor: "#94a3b8", titleColor: "#94a3b8" },
+          title: { color: "#e2e8f0" },
+        },
+      }).then((result) => {
+        viewRef.current = result.view;
+      });
+    });
+    return () => {
+      cancelled = true;
+      if (viewRef.current && typeof (viewRef.current as { finalize?: () => void }).finalize === "function") {
+        (viewRef.current as { finalize: () => void }).finalize();
+      }
+    };
+  }, [spec]);
+
+  return <div ref={containerRef} className="w-full" />;
+}
+
+function VegaDataTable({ artifact }: { artifact: { columns?: string[]; rows?: Record<string, string | number | null>[] } }) {
+  const columns = artifact.columns ?? [];
+  const rows = artifact.rows ?? [];
+  if (!columns.length || !rows.length) return <p className="text-[11px] text-slate-400">No underlying data available.</p>;
+  return (
+    <div className="overflow-x-auto rounded-lg border border-slate-700/50 max-h-48">
+      <table className="w-full text-[11px]">
+        <thead className="bg-slate-800/60 sticky top-0">
+          <tr>{columns.map((c) => <th key={c} className="px-2 py-1 text-left font-medium text-slate-300 whitespace-nowrap">{c}</th>)}</tr>
+        </thead>
+        <tbody>
+          {rows.slice(0, 50).map((row, ri) => (
+            <tr key={ri} className="border-t border-slate-700/30 hover:bg-slate-800/30">
+              {columns.map((c) => <td key={c} className="px-2 py-1 text-slate-400 whitespace-nowrap">{row[c] ?? ""}</td>)}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
 function ArtifactRenderer({ artifact }: { artifact: Artifact }) {
   const [showData, setShowData] = useState(false);
 
   if (artifact.kind === "metric") return <MetricArtifactView artifact={artifact} />;
   if (artifact.kind === "table") return <TableArtifactView artifact={artifact} />;
 
+  // Vega-Lite chart — single render path, no chart type switching
+  if (artifact.kind === "vega_chart") {
+    return (
+      <div>
+        {showData ? <VegaDataTable artifact={artifact} /> : <VegaLiteChart spec={artifact.vega_spec} />}
+        <button
+          onClick={() => setShowData(!showData)}
+          className="mt-2 flex items-center gap-1 text-[10px] text-slate-400 hover:text-emerald-500 transition-colors"
+        >
+          <span className="material-symbols-outlined text-sm">{showData ? "bar_chart" : "table_rows"}</span>
+          <span>{showData ? "Show chart" : "View data"}</span>
+        </button>
+      </div>
+    );
+  }
+
+  // Legacy chart rendering (backward compatibility with saved artifacts)
   const chartElement =
     artifact.chart_type === "line" ? <LineChart artifact={artifact} /> :
     artifact.chart_type === "dual_axis_line" ? <LineChart artifact={artifact} /> :
@@ -1129,6 +1339,12 @@ function InlineArtifactCard({
 
   return (
     <div className="mt-3 rounded-xl border border-slate-200 dark:border-slate-700/50 bg-slate-50 dark:bg-slate-900/40 p-3">
+      {/* Show saved annotation at top like a headline */}
+      {savedItem?.annotation && (
+        <div className="mb-3 rounded-lg bg-emerald-500/8 dark:bg-emerald-500/10 border-l-2 border-emerald-500 px-3 py-2">
+          <p className="text-[13px] font-semibold leading-snug text-slate-900 dark:text-slate-100">{savedItem.annotation}</p>
+        </div>
+      )}
       <div className="flex items-start gap-3">
         <div className="flex-1 min-w-0">
           <p className="text-[12px] font-semibold text-slate-800 dark:text-slate-100 mb-1">{artifact.title}</p>
@@ -1156,13 +1372,12 @@ function InlineArtifactCard({
       </div>
       {!savedItem && !disabled && (
         <input
-          className="mt-3 w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 text-[11px] text-slate-700 dark:text-slate-200 outline-none focus:ring-2 focus:ring-emerald-500"
+          className="mt-3 w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 text-[13px] text-slate-700 dark:text-slate-200 outline-none focus:ring-2 focus:ring-emerald-500"
           placeholder="Add a note before saving (optional)"
           value={draftAnnotation}
           onChange={(event) => onDraftChange(event.target.value)}
         />
       )}
-      {savedItem?.annotation && <p className="mt-3 text-[11px] text-emerald-600 dark:text-emerald-400">{savedItem.annotation}</p>}
     </div>
   );
 }
@@ -1182,26 +1397,18 @@ function SavedEvidenceCard({
 
   return (
     <div className="bg-slate-50 dark:bg-slate-800/30 rounded-xl border border-slate-200 dark:border-slate-700/50 p-4">
-      <div className="flex items-center gap-2 mb-3">
-        <AgentIcon agent={item.agent} />
-        <div className="min-w-0">
-          <p className="text-[10px] font-semibold text-slate-500">{agentInfo?.label}</p>
-          <p className="text-[12px] font-semibold text-slate-900 dark:text-slate-100 truncate">{item.artifact.title}</p>
+      {/* Annotation at top — like a PPT headline */}
+      {!editing && item.annotation && (
+        <div className="mb-3 rounded-lg bg-emerald-500/8 dark:bg-emerald-500/10 border-l-2 border-emerald-500 px-3 py-2.5">
+          <p className="text-[14px] font-semibold leading-snug text-slate-900 dark:text-slate-100">{item.annotation}</p>
         </div>
-        <span className="text-[10px] text-slate-500 ml-auto">{formatTime(item.saved_at)}</span>
-      </div>
-      <ArtifactRenderer artifact={item.artifact} />
-      <div className="mt-3 flex flex-wrap gap-2">
-        <span className="px-2 py-1 rounded-full bg-slate-200 dark:bg-slate-800 text-[10px] text-slate-600 dark:text-slate-300">
-          {item.citation.source}
-        </span>
-      </div>
-      {editing ? (
-        <div className="mt-3">
+      )}
+      {editing && (
+        <div className="mb-3">
           <p className="text-[10px] font-semibold text-emerald-600 dark:text-emerald-400 mb-1.5">Why this matters</p>
           <div className="flex gap-2">
             <input
-              className="flex-1 rounded-lg border border-emerald-400/50 dark:border-emerald-600/50 bg-white dark:bg-slate-900 px-3 py-2 text-[11px] outline-none focus:ring-2 focus:ring-emerald-500"
+              className="flex-1 rounded-lg border border-emerald-400/50 dark:border-emerald-600/50 bg-white dark:bg-slate-900 px-3 py-2 text-[13px] outline-none focus:ring-2 focus:ring-emerald-500"
               value={annotation}
               onChange={(event) => setAnnotation(event.target.value)}
               placeholder="Explain why this evidence supports your case..."
@@ -1218,12 +1425,21 @@ function SavedEvidenceCard({
             </button>
           </div>
         </div>
-      ) : item.annotation ? (
-        <div className="mt-3 rounded-lg bg-emerald-500/8 dark:bg-emerald-500/10 border-l-2 border-emerald-500 px-3 py-2">
-          <p className="text-[10px] font-semibold text-emerald-600 dark:text-emerald-400 mb-0.5">Why this matters</p>
-          <p className="text-[11px] leading-relaxed text-slate-700 dark:text-slate-200">{item.annotation}</p>
+      )}
+      <div className="flex items-center gap-2 mb-3">
+        <AgentIcon agent={item.agent} />
+        <div className="min-w-0">
+          <p className="text-[10px] font-semibold text-slate-500">{agentInfo?.label}</p>
+          <p className="text-[12px] font-semibold text-slate-900 dark:text-slate-100 truncate">{item.artifact.title}</p>
         </div>
-      ) : null}
+        <span className="text-[10px] text-slate-500 ml-auto">{formatTime(item.saved_at)}</span>
+      </div>
+      <ArtifactRenderer artifact={item.artifact} />
+      <div className="mt-3 flex flex-wrap gap-2">
+        <span className="px-2 py-1 rounded-full bg-slate-200 dark:bg-slate-800 text-[10px] text-slate-600 dark:text-slate-300">
+          {item.citation.source}
+        </span>
+      </div>
       <div className="mt-3 flex gap-2">
         <button
           onClick={() => {
@@ -1247,15 +1463,6 @@ function SavedEvidenceCard({
   );
 }
 
-function _humanizeWarning(warning: string): string {
-  const lower = warning.toLowerCase();
-  if (lower.includes("unauthorized table access")) return "I don't have access to that data source.";
-  if (lower.includes("no such column")) return "The query referenced a column that doesn't exist.";
-  if (lower.includes("could not find strong evidence")) return "I searched the available data but couldn't find relevant results.";
-  if (lower.includes("returned no rows")) return "The query ran but returned no matching records.";
-  if (lower.includes("syntax error")) return "There was a syntax error in the generated query.";
-  return warning.length > 120 ? warning.slice(0, 120) + "..." : warning;
-}
 
 export default function WorkspacePage() {
   const params = useParams();
@@ -1649,7 +1856,9 @@ export default function WorkspacePage() {
                   <div className={`px-3 py-2 rounded-xl rounded-tl-sm text-[13px] leading-relaxed whitespace-pre-wrap ${
                     message.role === "user"
                       ? "bg-emerald-500/10 dark:bg-emerald-600/20 text-emerald-900 dark:text-emerald-100 border border-emerald-500/20"
-                      : "bg-white dark:bg-slate-800/50 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700/50"
+                      : message.role === "agent" && !!message.warnings?.length && !message.artifacts?.length
+                        ? "bg-amber-500/8 dark:bg-amber-900/20 text-slate-700 dark:text-slate-300 border border-amber-500/20"
+                        : "bg-white dark:bg-slate-800/50 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700/50"
                   }`}>
                     {message.content}
                     {message.role === "agent" && message.artifacts?.map((artifact, artifactIndex) => {
@@ -1668,25 +1877,16 @@ export default function WorkspacePage() {
                         />
                       );
                     })}
-                    {/* Show failure card when warnings exist but no artifacts */}
-                    {message.role === "agent" && !!message.warnings?.length && !message.artifacts?.length && (
-                      <div className="mt-3 rounded-lg bg-amber-500/8 dark:bg-amber-500/10 border border-amber-500/20 p-3">
-                        <div className="flex items-center gap-1.5 mb-1.5">
-                          <span className="material-symbols-outlined text-amber-500 text-[16px]">warning</span>
-                          <span className="text-[12px] font-semibold text-amber-600 dark:text-amber-400">Couldn&apos;t complete this query</span>
-                        </div>
-                        <p className="text-[11px] text-slate-600 dark:text-slate-400 leading-relaxed mb-2">
-                          {_humanizeWarning(message.warnings[0])}
-                        </p>
-                        {message.queryLogId && (
-                          <button
-                            onClick={() => setLogModalQueryId(message.queryLogId!)}
-                            className="flex items-center gap-1 text-[10px] font-medium text-amber-600 dark:text-amber-400 hover:text-amber-500"
-                          >
-                            <span className="material-symbols-outlined text-sm">code</span>
-                            View Log for full details
-                          </button>
-                        )}
+                    {/* Show View Log link on failure */}
+                    {message.role === "agent" && !!message.warnings?.length && !message.artifacts?.length && message.queryLogId && (
+                      <div className="mt-2">
+                        <button
+                          onClick={() => setLogModalQueryId(message.queryLogId!)}
+                          className="flex items-center gap-1 text-[10px] font-medium text-amber-600 dark:text-amber-400 hover:text-amber-500"
+                        >
+                          <span className="material-symbols-outlined text-sm">troubleshoot</span>
+                          View log for details
+                        </button>
                       </div>
                     )}
                     {message.role === "agent" && message.queryLogId && (
@@ -1836,9 +2036,9 @@ export default function WorkspacePage() {
 
           {/* Type filter */}
           {savedEvidence.length > 0 && (() => {
-            const types = new Set(savedEvidence.map((e) => e.artifact.type));
+            const types = new Set(savedEvidence.map((e) => e.artifact.kind));
             if (types.size < 2) return null;
-            const typeLabels: Record<string, string> = { chart: "Charts", table: "Tables", metric: "Metrics" };
+            const typeLabels: Record<string, string> = { chart: "Charts", vega_chart: "Charts", table: "Tables", metric: "Metrics" };
             return (
               <div className="flex gap-1 px-3 pb-2 flex-wrap">
                 <button
@@ -1873,7 +2073,7 @@ export default function WorkspacePage() {
                 .map((id) => savedEvidence.find((e) => e.id === id))
                 .filter((e): e is SavedEvidence => !!e)
                 .filter((e) => evidenceAgentFilter === "all" || e.agent === evidenceAgentFilter)
-                .filter((e) => evidenceTypeFilter === "all" || e.artifact.type === evidenceTypeFilter);
+                .filter((e) => evidenceTypeFilter === "all" || e.artifact.kind === evidenceTypeFilter);
 
               if (orderedEvidence.length === 0) {
                 return (

@@ -82,9 +82,17 @@ export interface TableArtifact extends ArtifactBase {
   rows: Record<string, string | number | null>[];
   labels?: string[];
   series?: { name: string; values: number[] }[];
+  display_clarification?: string;
 }
 
-export type Artifact = MetricArtifact | ChartArtifact | TableArtifact;
+export interface VegaChartArtifact extends ArtifactBase {
+  kind: "vega_chart";
+  vega_spec: Record<string, unknown>;
+  columns?: string[];
+  rows?: Record<string, string | number | null>[];
+}
+
+export type Artifact = MetricArtifact | ChartArtifact | TableArtifact | VegaChartArtifact;
 
 export interface Citation {
   citation_id: string;

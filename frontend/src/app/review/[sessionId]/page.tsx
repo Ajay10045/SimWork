@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useParams } from "next/navigation";
 import { useAuthToken } from "@/lib/useAuthToken";
 import {
@@ -103,17 +103,42 @@ function BulletList({ title, items, icon, color }: { title: string; items: strin
   );
 }
 
+function ReviewVegaChart({ spec }: { spec: Record<string, unknown> }) {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const viewRef = useRef<unknown>(null);
+  useEffect(() => {
+    if (!containerRef.current) return;
+    let cancelled = false;
+    import("vega-embed").then(({ default: vegaEmbed }) => {
+      if (cancelled || !containerRef.current) return;
+      vegaEmbed(containerRef.current, spec as never, {
+        actions: false,
+        renderer: "svg",
+        config: {
+          background: "transparent",
+          view: { stroke: "transparent" },
+          axis: { labelColor: "#94a3b8", titleColor: "#94a3b8", gridColor: "#1e293b", domainColor: "#334155" },
+          legend: { labelColor: "#94a3b8", titleColor: "#94a3b8" },
+          title: { color: "#e2e8f0" },
+        },
+      }).then((result) => { viewRef.current = result.view; });
+    });
+    return () => {
+      cancelled = true;
+      if (viewRef.current && typeof (viewRef.current as { finalize?: () => void }).finalize === "function") {
+        (viewRef.current as { finalize: () => void }).finalize();
+      }
+    };
+  }, [spec]);
+  return <div ref={containerRef} className="w-full" />;
+}
+
 function ReviewArtifactView({ artifact }: { artifact: Artifact }) {
   if (artifact.kind === "metric") {
     return (
       <div className="mt-3 rounded-lg bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700/50 p-3 text-center">
         <p className="text-2xl font-bold text-slate-900 dark:text-slate-100">{artifact.value}</p>
-        {artifact.label && <p className="text-[11px] text-slate-500 mt-0.5">{artifact.label}</p>}
-        {artifact.change !== undefined && artifact.change !== null && (
-          <p className={`text-[11px] mt-0.5 font-semibold ${artifact.change >= 0 ? "text-emerald-500" : "text-red-500"}`}>
-            {artifact.change >= 0 ? "+" : ""}{artifact.change}%
-          </p>
-        )}
+        {artifact.subtitle && <p className="text-[11px] text-slate-500 mt-0.5">{artifact.subtitle}</p>}
       </div>
     );
   }
@@ -147,7 +172,16 @@ function ReviewArtifactView({ artifact }: { artifact: Artifact }) {
     );
   }
 
-  // Chart — render a simple bar/line preview
+  // Vega-Lite chart
+  if (artifact.kind === "vega_chart") {
+    return (
+      <div className="mt-3">
+        <ReviewVegaChart spec={artifact.vega_spec} />
+      </div>
+    );
+  }
+
+  // Legacy chart — render a simple bar/line preview
   if (artifact.kind === "chart") {
     const series = artifact.series[0];
     if (!series || series.values.length === 0) return null;
@@ -260,6 +294,14 @@ export default function ReviewPage() {
       <main className="flex-1 overflow-y-auto px-6 py-8 lg:px-10">
         <div className="max-w-5xl mx-auto space-y-8">
 
+          {/* Print-only header */}
+          <div className="hidden print:block print-header mb-6">
+            <h1 className="text-2xl font-bold text-slate-900">SimWork — Candidate Evaluation Report</h1>
+            <p className="text-sm text-slate-500 mt-1">
+              Session: {sessionId} · Printed: {new Date().toLocaleDateString()}
+            </p>
+          </div>
+
           {/* No score yet */}
           {!scoring && (
             <div className="bg-white dark:bg-slate-900/50 border border-slate-200 dark:border-slate-800 rounded-xl p-8 text-center">
@@ -303,7 +345,16 @@ export default function ReviewPage() {
                     {scoring.scored_at && ` · Scored: ${new Date(scoring.scored_at).toLocaleDateString()}`}
                   </p>
                 </div>
-                <ScoreCircle score={scoring.overall_score} />
+                <div className="flex items-center gap-4">
+                  <button
+                    onClick={() => window.print()}
+                    className="print:hidden inline-flex items-center gap-2 border border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 font-semibold py-2 px-4 rounded-lg text-sm transition-all"
+                  >
+                    <span className="material-symbols-outlined text-sm">download</span>
+                    Download PDF
+                  </button>
+                  <ScoreCircle score={scoring.overall_score} />
+                </div>
               </div>
 
               {/* Dimension scores */}
