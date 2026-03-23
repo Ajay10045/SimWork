@@ -3,9 +3,8 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { useSession } from "next-auth/react";
-
-const AUTHENTICATED_HOME = "/scenarios";
+import { useAuthToken } from "@/lib/useAuthToken";
+import { getMe, getMySessions } from "@/lib/api";
 
 const STEPS = [
   {
@@ -185,14 +184,44 @@ function CTASection({ showForm, setShowForm }: { showForm: boolean; setShowForm:
 
 export default function HomePage() {
   const router = useRouter();
-  const { status } = useSession();
+  const authSession = useAuthToken();
   const [showDemoForm, setShowDemoForm] = useState(false);
 
   useEffect(() => {
-    if (status === "authenticated") {
-      router.replace(AUTHENTICATED_HOME);
+    if (!authSession) return;
+
+    let cancelled = false;
+
+    async function routeAuthenticatedUser() {
+      try {
+        const me = await getMe();
+        if (cancelled) return;
+
+        if (me.role === "company") {
+          router.replace("/dashboard");
+          return;
+        }
+
+        const { sessions } = await getMySessions();
+        if (cancelled) return;
+
+        const assignedSession = sessions.find((item) => item.assessment_id || item.invite_token);
+        if (assignedSession) {
+          router.replace(`/briefing/${assignedSession.session_id}`);
+          return;
+        }
+        router.replace("/scenarios");
+      } catch {
+        if (!cancelled) router.replace("/scenarios");
+      }
     }
-  }, [router, status]);
+
+    routeAuthenticatedUser();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [authSession, router]);
 
   const openDemoForm = () => {
     setShowDemoForm(true);
