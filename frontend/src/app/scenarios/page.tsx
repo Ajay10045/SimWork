@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { signOut } from "next-auth/react";
 import { useAuthToken } from "@/lib/useAuthToken";
 import {
+  getMySessions,
   listScenarios,
   getChallenges,
   startSession,
@@ -27,26 +28,52 @@ export default function ScenariosPage() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    listScenarios()
-      .then(async (res) => {
-        setScenarios(res.scenarios);
-        const map: Record<string, string> = {};
-        await Promise.all(
-          res.scenarios.map(async (s) => {
-            try {
-              const ch = await getChallenges(s.id);
-              if (ch.challenges.length > 0) {
-                map[s.id] = ch.challenges[0].id;
-              }
-            } catch {
-              // ignore per-scenario challenge fetch errors
+    if (!authSession) return;
+
+    let cancelled = false;
+
+    async function loadScenarios() {
+      const { sessions } = await getMySessions();
+      if (cancelled) return;
+
+      const assignedSession = sessions.find((item) => item.assessment_id || item.invite_token);
+      if (assignedSession) {
+        router.replace(`/briefing/${assignedSession.session_id}`);
+        return;
+      }
+
+      const res = await listScenarios();
+      if (cancelled) return;
+
+      setScenarios(res.scenarios);
+      const map: Record<string, string> = {};
+      await Promise.all(
+        res.scenarios.map(async (s) => {
+          try {
+            const ch = await getChallenges(s.id);
+            if (ch.challenges.length > 0) {
+              map[s.id] = ch.challenges[0].id;
             }
-          })
-        );
-        setChallengeMap(map);
-      })
-      .catch(() => setError("Failed to load scenarios. Is the backend running?"));
-  }, []);
+          } catch {
+            // ignore per-scenario challenge fetch errors
+          }
+        }),
+      );
+      if (cancelled) return;
+      setChallengeMap(map);
+    }
+
+    loadScenarios()
+      .catch(() => {
+        if (!cancelled) {
+          setError("Failed to load scenarios. Is the backend running?");
+        }
+      });
+    
+    return () => {
+      cancelled = true;
+    };
+  }, [authSession, router]);
 
   const handleStart = async (scenarioId: string) => {
     const challengeId = challengeMap[scenarioId];

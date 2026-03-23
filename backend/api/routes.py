@@ -48,6 +48,11 @@ from simulation_engine.engine import (
 router = APIRouter(prefix="/api/v1")
 
 
+def _get_assigned_candidate_session(user_id: str) -> dict[str, Any] | None:
+    sessions = get_user_sessions(user_id)
+    return next((session for session in sessions if session.get("assessment_id") or session.get("invite_token")), None)
+
+
 class StartSessionRequest(BaseModel):
     candidate_id: str
     scenario_id: str
@@ -90,6 +95,12 @@ class SubmitRequest(BaseModel):
 
 @router.post("/sessions/start")
 def api_start_session(req: StartSessionRequest, user: dict = Depends(get_current_user)):
+    assigned_session = _get_assigned_candidate_session(user["user_id"])
+    if assigned_session and assigned_session["scenario_id"] != req.scenario_id:
+        raise HTTPException(
+            status_code=403,
+            detail="This account is restricted to the invited assessment scenario.",
+        )
     try:
         return start_session(user["user_id"], req.scenario_id, req.challenge_id)
     except FileNotFoundError:
@@ -266,12 +277,22 @@ def api_get_my_sessions(user: dict = Depends(get_current_user)):
 
 
 @router.get("/scenarios")
-def api_list_scenarios():
-    return {"scenarios": list_scenarios()}
+def api_list_scenarios(user: dict = Depends(get_current_user)):
+    scenarios = list_scenarios()
+    assigned_session = _get_assigned_candidate_session(user["user_id"])
+    if assigned_session:
+        scenarios = [scenario for scenario in scenarios if scenario["id"] == assigned_session["scenario_id"]]
+    return {"scenarios": scenarios}
 
 
 @router.get("/scenarios/{scenario_id}/challenges")
-def api_get_challenges(scenario_id: str):
+def api_get_challenges(scenario_id: str, user: dict = Depends(get_current_user)):
+    assigned_session = _get_assigned_candidate_session(user["user_id"])
+    if assigned_session and assigned_session["scenario_id"] != scenario_id:
+        raise HTTPException(
+            status_code=403,
+            detail="This account is restricted to the invited assessment scenario.",
+        )
     try:
         return get_challenges(scenario_id)
     except FileNotFoundError:

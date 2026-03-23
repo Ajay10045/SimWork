@@ -11,6 +11,9 @@ from typing import Any
 import os
 
 DB_PATH = Path(os.environ.get("SIMWORK_DB_PATH", Path(__file__).resolve().parent.parent / "simwork.db"))
+APP_USERS_TABLE = "app_users"
+
+
 def _get_conn() -> sqlite3.Connection:
     conn = sqlite3.connect(str(DB_PATH))
     conn.row_factory = sqlite3.Row
@@ -62,12 +65,28 @@ def _ensure_sessions_columns(conn: sqlite3.Connection) -> None:
             conn.execute(f"ALTER TABLE sessions ADD COLUMN {column} {data_type}")
 
 
-def _ensure_users_columns(conn: sqlite3.Connection) -> None:
+def _ensure_app_users_table(conn: sqlite3.Connection) -> None:
+    conn.execute(
+        f"""
+        CREATE TABLE IF NOT EXISTS {APP_USERS_TABLE} (
+            id TEXT PRIMARY KEY,
+            email TEXT NOT NULL UNIQUE,
+            name TEXT,
+            picture TEXT,
+            role TEXT DEFAULT 'candidate',
+            created_at TEXT NOT NULL,
+            last_login_at TEXT NOT NULL
+        )
+        """
+    )
+
+
+def _ensure_app_users_columns(conn: sqlite3.Connection) -> None:
     wanted: dict[str, str] = {"role": "TEXT DEFAULT 'candidate'"}
-    existing = _table_columns(conn, "users")
+    existing = _table_columns(conn, APP_USERS_TABLE)
     for column, data_type in wanted.items():
         if column not in existing:
-            conn.execute(f"ALTER TABLE users ADD COLUMN {column} {data_type}")
+            conn.execute(f"ALTER TABLE {APP_USERS_TABLE} ADD COLUMN {column} {data_type}")
 
 
 def init_db() -> None:
@@ -155,22 +174,12 @@ def init_db() -> None:
             FOREIGN KEY (session_id) REFERENCES sessions(session_id)
         );
 
-        CREATE TABLE IF NOT EXISTS users (
-            id TEXT PRIMARY KEY,
-            email TEXT NOT NULL UNIQUE,
-            name TEXT,
-            picture TEXT,
-            role TEXT DEFAULT 'candidate',
-            created_at TEXT NOT NULL,
-            last_login_at TEXT NOT NULL
-        );
-
         CREATE TABLE IF NOT EXISTS companies (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             name TEXT NOT NULL,
             owner_user_id TEXT NOT NULL UNIQUE,
             created_at TEXT NOT NULL,
-            FOREIGN KEY (owner_user_id) REFERENCES users(id)
+            FOREIGN KEY (owner_user_id) REFERENCES app_users(id)
         );
 
         CREATE TABLE IF NOT EXISTS assessments (
@@ -198,7 +207,8 @@ def init_db() -> None:
     _ensure_query_log_columns(conn)
     _ensure_submissions_columns(conn)
     _ensure_sessions_columns(conn)
-    _ensure_users_columns(conn)
+    _ensure_app_users_table(conn)
+    _ensure_app_users_columns(conn)
     conn.commit()
     conn.close()
 
@@ -228,12 +238,13 @@ def upsert_user(user_id: str, email: str, name: str | None = None, picture: str 
     Existing users keep their current role (role is never overwritten on update).
     """
     conn = _get_conn()
-    _ensure_users_columns(conn)
+    _ensure_app_users_table(conn)
+    _ensure_app_users_columns(conn)
     now = _utcnow()
     user_role = role or "candidate"
     conn.execute(
         """
-        INSERT INTO users (id, email, name, picture, role, created_at, last_login_at)
+        INSERT INTO app_users (id, email, name, picture, role, created_at, last_login_at)
         VALUES (?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(id) DO UPDATE SET
             email = excluded.email,
@@ -250,8 +261,9 @@ def upsert_user(user_id: str, email: str, name: str | None = None, picture: str 
 def set_user_role(user_id: str, role: str) -> None:
     """Explicitly update a user's role."""
     conn = _get_conn()
-    _ensure_users_columns(conn)
-    conn.execute("UPDATE users SET role = ? WHERE id = ?", (role, user_id))
+    _ensure_app_users_table(conn)
+    _ensure_app_users_columns(conn)
+    conn.execute(f"UPDATE {APP_USERS_TABLE} SET role = ? WHERE id = ?", (role, user_id))
     conn.commit()
     conn.close()
 
@@ -259,8 +271,9 @@ def set_user_role(user_id: str, role: str) -> None:
 def get_user(user_id: str) -> dict[str, Any] | None:
     """Get a user by ID."""
     conn = _get_conn()
-    _ensure_users_columns(conn)
-    row = conn.execute("SELECT * FROM users WHERE id = ?", (user_id,)).fetchone()
+    _ensure_app_users_table(conn)
+    _ensure_app_users_columns(conn)
+    row = conn.execute(f"SELECT * FROM {APP_USERS_TABLE} WHERE id = ?", (user_id,)).fetchone()
     conn.close()
     if row is None:
         return None
@@ -817,7 +830,7 @@ def get_assessment_candidates(assessment_id: str) -> list[dict[str, Any]]:
                u.email, u.name, u.picture,
                sr.overall_score, sr.scored_at
         FROM sessions s
-        LEFT JOIN users u ON s.candidate_id = u.id
+        LEFT JOIN app_users u ON s.candidate_id = u.id
         LEFT JOIN scoring_results sr ON s.session_id = sr.session_id
         WHERE s.assessment_id = ?
         ORDER BY s.started_at DESC
@@ -872,7 +885,7 @@ def get_invite_tokens_by_assessment(assessment_id: str) -> list[dict[str, Any]]:
         SELECT it.token, it.candidate_email, it.created_at, it.used_at, it.used_by_user_id, it.expires_at,
                u.email AS claimed_by_email, u.name AS claimed_by_name
         FROM invite_tokens it
-        LEFT JOIN users u ON it.used_by_user_id = u.id
+        LEFT JOIN app_users u ON it.used_by_user_id = u.id
         WHERE it.assessment_id = ?
         ORDER BY it.created_at DESC
         """,
