@@ -271,7 +271,23 @@ def get_user_sessions(user_id: str) -> list[dict[str, Any]]:
     """Get all sessions for a user."""
     conn = _get_conn()
     rows = conn.execute(
-        "SELECT session_id, scenario_id, started_at, status FROM sessions WHERE candidate_id = ? ORDER BY started_at DESC",
+        """
+        SELECT
+            s.session_id,
+            s.scenario_id,
+            s.challenge_id,
+            s.assessment_id,
+            s.invite_token,
+            s.started_at,
+            s.status,
+            a.title AS assessment_title,
+            c.name AS company_name
+        FROM sessions s
+        LEFT JOIN assessments a ON s.assessment_id = a.id
+        LEFT JOIN companies c ON a.company_id = c.id
+        WHERE s.candidate_id = ?
+        ORDER BY s.started_at DESC
+        """,
         (user_id,),
     ).fetchall()
     conn.close()

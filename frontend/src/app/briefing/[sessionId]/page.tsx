@@ -28,15 +28,13 @@ export default function BriefingPage() {
 
   const [scenario, setScenario] = useState<ScenarioDetail | null>(null);
   const [status, setStatus] = useState<SessionStatus | null>(null);
-  const [companyName, setCompanyName] = useState("");
+  const [companyName] = useState(() => getCookie("simwork_company"));
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     if (!session || !sessionId) return;
 
-    const name = getCookie("simwork_company");
-    if (name) {
-      setCompanyName(name);
+    if (companyName) {
       clearCookie("simwork_company");
     }
 
@@ -52,7 +50,7 @@ export default function BriefingPage() {
         router.replace(`/workspace/${sessionId}`);
       })
       .finally(() => setLoading(false));
-  }, [session, sessionId, router]);
+  }, [companyName, session, sessionId, router]);
 
   if (!session || loading) {
     return (

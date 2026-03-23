@@ -495,6 +495,22 @@ export async function setMyRole(role: "company" | "candidate"): Promise<{ role: 
   });
 }
 
+export interface UserSessionSummary {
+  session_id: string;
+  scenario_id: string;
+  challenge_id?: string | null;
+  assessment_id?: string | null;
+  invite_token?: string | null;
+  started_at: string;
+  status: string;
+  assessment_title?: string | null;
+  company_name?: string | null;
+}
+
+export async function getMySessions(): Promise<{ sessions: UserSessionSummary[] }> {
+  return fetchJSON(`${PREFIX}/me/sessions`);
+}
+
 // ── Company ─────────────────────────────────────────────────────────
 
 export async function createCompany(name: string): Promise<{ id: number; name: string }> {

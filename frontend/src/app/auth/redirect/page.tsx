@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { getMe, setMyRole, claimInvite } from "@/lib/api";
+import { claimInvite, getMe, getMySessions, setMyRole } from "@/lib/api";
 import { useAuthToken } from "@/lib/useAuthToken";
 
 function getCookie(name: string): string {
@@ -57,6 +57,15 @@ export default function AuthRedirectPage() {
         if (me.role === "company") {
           router.replace("/dashboard");
         } else {
+          const { sessions } = await getMySessions();
+          const assignedSession = sessions.find((item) => item.assessment_id || item.invite_token);
+          if (assignedSession) {
+            if (assignedSession.company_name) {
+              document.cookie = `simwork_company=${encodeURIComponent(assignedSession.company_name)};path=/;max-age=600`;
+            }
+            router.replace(`/briefing/${assignedSession.session_id}`);
+            return;
+          }
           router.replace("/");
         }
       } catch {

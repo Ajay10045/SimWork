@@ -5,6 +5,8 @@ import { useRouter } from "next/navigation";
 import { signOut } from "next-auth/react";
 import { useAuthToken } from "@/lib/useAuthToken";
 import {
+  getMe,
+  getMySessions,
   listScenarios,
   getChallenges,
   startSession,
@@ -27,8 +29,32 @@ export default function LandingPage() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    listScenarios()
-      .then(async (res) => {
+    if (!authSession) return;
+
+    let cancelled = false;
+
+    async function loadLandingState() {
+      try {
+        const me = await getMe();
+        if (cancelled) return;
+
+        if (me.role === "company") {
+          router.replace("/dashboard");
+          return;
+        }
+
+        const { sessions } = await getMySessions();
+        if (cancelled) return;
+
+        const assignedSession = sessions.find((item) => item.assessment_id || item.invite_token);
+        if (assignedSession) {
+          router.replace(`/briefing/${assignedSession.session_id}`);
+          return;
+        }
+
+        const res = await listScenarios();
+        if (cancelled) return;
+
         setScenarios(res.scenarios);
         const map: Record<string, string> = {};
         await Promise.all(
@@ -41,12 +67,23 @@ export default function LandingPage() {
             } catch {
               // ignore per-scenario challenge fetch errors
             }
-          })
+          }),
         );
+        if (cancelled) return;
         setChallengeMap(map);
-      })
-      .catch(() => setError("Failed to load scenarios. Is the backend running?"));
-  }, []);
+      } catch {
+        if (!cancelled) {
+          setError("Failed to load scenarios. Is the backend running?");
+        }
+      }
+    }
+
+    loadLandingState();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [authSession, router]);
 
   const handleStart = async (scenarioId: string) => {
     const challengeId = challengeMap[scenarioId];
