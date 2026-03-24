@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { signOut } from "next-auth/react";
 import { useAuthToken } from "@/lib/useAuthToken";
 import {
+  getMe,
   getMySessions,
   listScenarios,
   getChallenges,
@@ -34,6 +35,14 @@ export default function ScenariosPage() {
     let cancelled = false;
 
     async function loadScenarios() {
+      const me = await getMe();
+      if (cancelled) return;
+
+      if (me.role === "company") {
+        router.replace("/dashboard");
+        return;
+      }
+
       const { sessions } = await getMySessions();
       if (cancelled) return;
 
@@ -132,7 +141,7 @@ export default function ScenariosPage() {
                   {authSession.user.name}
                 </span>
                 <button
-                  onClick={() => signOut({ callbackUrl: "/login" })}
+                  onClick={() => signOut({ callbackUrl: "/" })}
                   className="flex items-center justify-center rounded-lg h-9 px-4 bg-slate-200 dark:bg-slate-800 text-slate-600 dark:text-slate-300 text-xs font-medium hover:opacity-80 transition-opacity"
                 >
                   Sign out

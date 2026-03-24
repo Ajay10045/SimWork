@@ -4,15 +4,13 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { claimInvite, getMe, getMySessions, setMyRole } from "@/lib/api";
 import { useAuthToken } from "@/lib/useAuthToken";
-
-function getCookie(name: string): string {
-  const match = document.cookie.match(new RegExp(`(?:^|; )${name}=([^;]*)`));
-  return match ? decodeURIComponent(match[1]) : "";
-}
-
-function clearCookie(name: string) {
-  document.cookie = `${name}=;path=/;max-age=0`;
-}
+import {
+  clearPendingAuthState,
+  findAssignedSession,
+  readPendingAuthState,
+  resolveAuthenticatedDestination,
+  setCookie,
+} from "@/lib/auth-routing";
 
 export default function AuthRedirectPage() {
   const ready = useAuthToken();
@@ -24,22 +22,20 @@ export default function AuthRedirectPage() {
 
     async function redirect() {
       try {
-        const pendingRole = getCookie("simwork_role");
-        const pendingInvite = getCookie("simwork_invite");
-        clearCookie("simwork_role");
-        clearCookie("simwork_invite");
+        const { role, invite, next } = readPendingAuthState();
+        clearPendingAuthState();
 
-        if (pendingRole === "company") {
+        if (role === "company") {
           setStatus("Setting up your account...");
           await setMyRole("company");
         }
 
-        if (pendingInvite) {
+        if (invite) {
           setStatus("Preparing your assessment...");
           try {
-            const result = await claimInvite(pendingInvite);
+            const result = await claimInvite(invite);
             if (result.company_name) {
-              document.cookie = `simwork_company=${encodeURIComponent(result.company_name)};path=/;max-age=600`;
+              setCookie("simwork_company", result.company_name);
             }
             router.replace(`/briefing/${result.session_id}`);
             return;
@@ -50,21 +46,17 @@ export default function AuthRedirectPage() {
         const me = await getMe();
 
         if (me.role === "company") {
-          router.replace("/dashboard");
+          router.replace(resolveAuthenticatedDestination(me.role, [], next));
         } else {
           const { sessions } = await getMySessions();
-          const assignedSession = sessions.find((item) => item.assessment_id || item.invite_token);
+          const assignedSession = findAssignedSession(sessions);
           if (assignedSession?.company_name) {
-            document.cookie = `simwork_company=${encodeURIComponent(assignedSession.company_name)};path=/;max-age=600`;
+            setCookie("simwork_company", assignedSession.company_name);
           }
-          if (assignedSession) {
-            router.replace(`/briefing/${assignedSession.session_id}`);
-            return;
-          }
-          router.replace("/");
+          router.replace(resolveAuthenticatedDestination(me.role, sessions, next));
         }
       } catch {
-        router.replace("/");
+        router.replace("/?auth=candidate");
       }
     }
 
