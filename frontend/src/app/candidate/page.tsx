@@ -40,11 +40,16 @@ export default function CandidateHomePage() {
   const [sessions, setSessions] = useState<UserSessionSummary[]>([]);
   const [inviteInput, setInviteInput] = useState("");
   const [inviteError, setInviteError] = useState("");
+  const [notice, setNotice] = useState("");
 
   const assignedSessions = useMemo(
     () => sessions.filter((item) => item.assessment_id || item.invite_token),
     [sessions]
   );
+
+  useEffect(() => {
+    setNotice(new URLSearchParams(window.location.search).get("notice") || "");
+  }, []);
 
   useEffect(() => {
     if (!authSession) return;
@@ -57,7 +62,7 @@ export default function CandidateHomePage() {
         if (cancelled) return;
 
         if (me.role === "company") {
-          router.replace("/dashboard");
+          router.replace("/dashboard?notice=candidate-access-company");
           return;
         }
 
@@ -109,6 +114,11 @@ export default function CandidateHomePage() {
       </nav>
 
       <main className="max-w-5xl mx-auto px-6 py-12">
+        {notice === "invite-required" && (
+          <div className="mb-8 rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-200">
+            Use the invite link your company sent you to begin a new assessment, or continue an existing one listed below.
+          </div>
+        )}
         <div className="mb-10 max-w-3xl">
           <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-[#10B981]/10 text-[#10B981] text-xs font-bold uppercase tracking-wider mb-4">
             <span className="material-symbols-outlined text-sm">pending_actions</span>
@@ -194,14 +204,6 @@ export default function CandidateHomePage() {
               </button>
             </form>
 
-            <div className="mt-6 pt-5 border-t border-slate-800">
-              <p className="text-xs font-bold uppercase tracking-wider text-slate-500 mb-3">
-                Secondary option
-              </p>
-              <Link href="/scenarios" className="text-sm text-slate-300 hover:text-white transition-colors">
-                Browse open practice scenarios
-              </Link>
-            </div>
           </section>
         </div>
       </main>

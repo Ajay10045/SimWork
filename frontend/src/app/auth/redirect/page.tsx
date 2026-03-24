@@ -46,6 +46,10 @@ export default function AuthRedirectPage() {
         const me = await getMe();
 
         if (me.role === "company") {
+          if (!role && !invite) {
+            router.replace("/dashboard?notice=candidate-access-company");
+            return;
+          }
           router.replace(resolveAuthenticatedDestination(me.role, [], next));
         } else {
           const { sessions } = await getMySessions();

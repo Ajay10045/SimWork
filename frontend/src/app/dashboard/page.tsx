@@ -24,6 +24,7 @@ import { findAssignedSession } from "@/lib/auth-routing";
 export default function DashboardPage() {
   const session = useAuthToken();
   const router = useRouter();
+  const [notice, setNotice] = useState("");
 
   const [companyName, setCompanyName] = useState("");
   const [needsCompany, setNeedsCompany] = useState(false);
@@ -43,6 +44,10 @@ export default function DashboardPage() {
 
   const [inviteEmails, setInviteEmails] = useState<Record<string, string>>({});
   const [inviteStatus, setInviteStatus] = useState<Record<string, string>>({});
+
+  useEffect(() => {
+    setNotice(new URLSearchParams(window.location.search).get("notice") || "");
+  }, []);
 
   useEffect(() => {
     if (!session) return;
@@ -199,6 +204,11 @@ export default function DashboardPage() {
       </nav>
 
       <div className="max-w-5xl mx-auto px-6 py-10">
+        {notice === "candidate-access-company" && (
+          <div className="mb-6 rounded-xl border border-sky-500/30 bg-sky-500/10 px-4 py-3 text-sm text-sky-200">
+            Candidate Access is invite-first. Use Company Sign In for employer work, or open a candidate invite link if you need to enter an assessment as a participant.
+          </div>
+        )}
         <div className="flex items-center justify-between mb-8">
           <h1 className="text-2xl font-bold">Your Assessments</h1>
           <button

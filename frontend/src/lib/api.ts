@@ -34,10 +34,12 @@ async function fetchJSON<T>(path: string, init?: RequestInit): Promise<T> {
   }
   if (res.status === 401 && typeof window !== "undefined") {
     const nextPath = `${window.location.pathname}${window.location.search}`;
-    window.location.href = buildLandingAuthUrl({
-      auth: inferCompanyIntent(nextPath) ? "company" : "candidate",
-      next: nextPath,
-    });
+    if (window.location.pathname !== "/") {
+      window.location.href = buildLandingAuthUrl({
+        auth: inferCompanyIntent(nextPath) ? "company" : "candidate",
+        next: nextPath,
+      });
+    }
     throw new Error("Session expired");
   }
   if (!res.ok) {
