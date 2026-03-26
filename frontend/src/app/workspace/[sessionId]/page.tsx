@@ -1569,17 +1569,21 @@ export default function WorkspacePage() {
     if (!status) return;
     let remaining = status.time_remaining_minutes * 60;
     setTimeLeft(formatCountdown(remaining));
+    if (remaining <= 0) {
+      router.replace(`/complete/${sessionId}`);
+      return;
+    }
     const interval = setInterval(() => {
       remaining -= 1;
       if (remaining <= 0) {
         clearInterval(interval);
-        setTimeLeft("00:00");
+        router.replace(`/complete/${sessionId}`);
         return;
       }
       setTimeLeft(formatCountdown(remaining));
     }, 1000);
     return () => clearInterval(interval);
-  }, [status]);
+  }, [status, router, sessionId]);
 
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: "smooth" });

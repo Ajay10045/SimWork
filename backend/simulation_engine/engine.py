@@ -128,6 +128,11 @@ def handle_query(
     if session["status"] != "active":
         raise ValueError("Session is no longer active")
 
+    started_at = datetime.fromisoformat(session["started_at"])
+    elapsed = (datetime.now(timezone.utc) - started_at).total_seconds() / 60
+    if elapsed >= DEFAULT_TIME_LIMIT:
+        raise ValueError("Time limit exceeded")
+
     validate_agent(agent)
     history = get_query_history(session_id)
     result = route_query(

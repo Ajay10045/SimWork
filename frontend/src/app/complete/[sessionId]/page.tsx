@@ -5,6 +5,7 @@ import { useParams, useRouter } from "next/navigation";
 import { useAuthToken } from "@/lib/useAuthToken";
 import {
   getSavedEvidence,
+  getSessionStatus,
   logSessionEvent,
   submitSolution,
   type ProposedAction,
@@ -89,10 +90,16 @@ export default function CompletionPage() {
   const [selectedEvidenceIds, setSelectedEvidenceIds] = useState<number[]>([]);
   const [submitted, setSubmitted] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [timeExpired, setTimeExpired] = useState(false);
 
   useEffect(() => {
     logSessionEvent(sessionId, "submission_started", {}).catch(() => undefined);
     getSavedEvidence(sessionId).then((data) => setSavedEvidence(data.evidence)).catch(console.error);
+    getSessionStatus(sessionId).then((data) => {
+      if (data.time_remaining_minutes <= 0) {
+        setTimeExpired(true);
+      }
+    }).catch(() => {});
   }, [sessionId]);
 
   const validActions = useMemo(
@@ -137,12 +144,14 @@ export default function CompletionPage() {
             </div>
             <h2 className="text-slate-900 dark:text-slate-100 text-lg font-bold tracking-tight">SimWork</h2>
           </div>
-          <button
-            onClick={() => router.push(`/workspace/${sessionId}`)}
-            className="rounded-lg h-10 px-4 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 text-sm font-semibold"
-          >
-            Back to Investigation
-          </button>
+          {!timeExpired && (
+            <button
+              onClick={() => router.push(`/workspace/${sessionId}`)}
+              className="rounded-lg h-10 px-4 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 text-sm font-semibold"
+            >
+              Back to Investigation
+            </button>
+          )}
         </header>
 
         <main className="flex flex-1 overflow-hidden">
