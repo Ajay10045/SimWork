@@ -25,7 +25,11 @@ def _get_pool() -> ThreadedConnectionPool:
             "DATABASE_URL",
             "postgresql://simwork:simwork@localhost:5432/simwork",
         )
-        _pool = ThreadedConnectionPool(1, 10, db_url)
+        try:
+            _pool = ThreadedConnectionPool(2, 20, db_url)
+        except Exception:
+            logger.error("Failed to create database connection pool — is PostgreSQL running?")
+            raise
     return _pool
 
 
@@ -35,6 +39,27 @@ def _get_conn():
 
 def _put_conn(conn):
     _get_pool().putconn(conn)
+
+
+def close_pool() -> None:
+    """Close all connections in the pool (call on app shutdown)."""
+    global _pool
+    if _pool is not None:
+        _pool.closeall()
+        _pool = None
+
+
+def check_db() -> bool:
+    """Return True if the database is reachable."""
+    try:
+        conn = _get_conn()
+        try:
+            conn.cursor().execute("SELECT 1")
+            return True
+        finally:
+            _put_conn(conn)
+    except Exception:
+        return False
 
 
 def _utcnow() -> str:

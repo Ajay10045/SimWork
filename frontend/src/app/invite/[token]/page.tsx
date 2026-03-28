@@ -3,10 +3,8 @@
 import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import { signIn } from "next-auth/react";
-import { InviteValidation } from "@/lib/api";
+import { InviteValidation, validateInvite } from "@/lib/api";
 import { setPendingAuthState } from "@/lib/auth-routing";
-
-const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
 export default function InvitePage() {
   const { token } = useParams<{ token: string }>();
@@ -16,16 +14,9 @@ export default function InvitePage() {
 
   useEffect(() => {
     if (!token) return;
-    fetch(`${API_BASE}/api/v1/invite/${token}`)
-      .then(async (res) => {
-        if (!res.ok) {
-          const data = await res.json().catch(() => ({}));
-          throw new Error(data.detail || "Invalid invite link");
-        }
-        return res.json();
-      })
+    validateInvite(token)
       .then((data) => setInvite(data))
-      .catch((err) => setError(err.message))
+      .catch((err) => setError(err.message || "Invalid invite link"))
       .finally(() => setLoading(false));
   }, [token]);
 

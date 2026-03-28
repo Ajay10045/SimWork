@@ -1,4 +1,5 @@
 const COOKIE_MAX_AGE = 600;
+const IS_HTTPS = typeof window !== "undefined" && window.location.protocol === "https:";
 export type AuthIntent = "company" | "candidate";
 
 export type PendingAuthState = {
@@ -78,7 +79,9 @@ export function inferCompanyIntent(nextPath?: string | null): boolean {
 }
 
 export function setCookie(name: string, value: string) {
-  document.cookie = `${name}=${encodeURIComponent(value)};path=/;max-age=${COOKIE_MAX_AGE}`;
+  let cookie = `${name}=${encodeURIComponent(value)};path=/;max-age=${COOKIE_MAX_AGE};SameSite=Lax`;
+  if (IS_HTTPS) cookie += ";Secure";
+  document.cookie = cookie;
 }
 
 export function getCookie(name: string): string {

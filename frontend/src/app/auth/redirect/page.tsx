@@ -20,9 +20,9 @@ export default function AuthRedirectPage() {
     if (!ready) return;
 
     async function redirect() {
+      const { role, invite, next } = readPendingAuthState();
+      clearPendingAuthState();
       try {
-        const { role, invite, next } = readPendingAuthState();
-        clearPendingAuthState();
 
         if (role === "company") {
           setStatus("Setting up your account...");
@@ -54,7 +54,7 @@ export default function AuthRedirectPage() {
           router.replace(resolveAuthenticatedDestination(me.role, [], next));
         }
       } catch {
-        router.replace("/?auth=candidate");
+        router.replace(role === "company" ? "/?auth=company" : "/?auth=candidate");
       }
     }
 
