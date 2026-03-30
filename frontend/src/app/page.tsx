@@ -236,7 +236,7 @@ function CTASection({ showForm, setShowForm }: { showForm: boolean; setShowForm:
               <span className="material-symbols-outlined text-lg">close</span>
             </button>
           )}
-          <h2 className="text-3xl md:text-4xl font-black mb-4">
+          <h2 className="text-2xl sm:text-3xl md:text-4xl font-black mb-4">
             Ready to see candidates in action?
           </h2>
           <p className="text-slate-400 max-w-xl mx-auto mb-10">
@@ -572,7 +572,7 @@ function HomePageContent() {
       </nav>
 
       <section className="relative min-h-[90vh] flex flex-col items-center justify-center text-center px-6 overflow-hidden">
-        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] rounded-full bg-[#10B981]/[0.08] blur-[120px] pointer-events-none" />
+        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[300px] h-[300px] sm:w-[450px] sm:h-[450px] md:w-[600px] md:h-[600px] rounded-full bg-[#10B981]/[0.08] blur-[120px] pointer-events-none" />
 
         <div className="relative z-10 max-w-3xl">
           <span className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-[#10B981]/10 text-[#10B981] text-xs font-bold uppercase tracking-wider border border-[#10B981]/20 mb-8">
@@ -609,7 +609,7 @@ function HomePageContent() {
       </section>
 
       <section id="how-it-works" className="max-w-6xl mx-auto px-6 py-24">
-        <h2 className="text-3xl md:text-4xl font-black text-center mb-16">
+        <h2 className="text-2xl sm:text-3xl md:text-4xl font-black text-center mb-10 sm:mb-16">
           How It Works
         </h2>
 
@@ -661,7 +661,7 @@ function HomePageContent() {
                 <div className="hidden md:block w-px h-14 bg-slate-800 mx-16" />
               )}
               <div className="text-center">
-                <p className="text-4xl md:text-5xl font-black">{s.value}</p>
+                <p className="text-2xl sm:text-3xl md:text-5xl font-black">{s.value}</p>
                 <p className="text-[10px] font-bold uppercase tracking-widest text-[#10B981] mt-2">
                   {s.label}
                 </p>

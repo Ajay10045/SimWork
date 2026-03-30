@@ -91,6 +91,7 @@ export default function CompletionPage() {
   const [submitted, setSubmitted] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [timeExpired, setTimeExpired] = useState(false);
+  const [showMobileEvidence, setShowMobileEvidence] = useState(false);
 
   useEffect(() => {
     logSessionEvent(sessionId, "submission_started", {}).catch(() => undefined);
@@ -154,9 +155,18 @@ export default function CompletionPage() {
           )}
         </header>
 
-        <main className="flex flex-1 overflow-hidden">
-          <section className="flex-1 overflow-y-auto px-6 py-8 lg:px-10">
+        <main className="flex flex-col lg:flex-row flex-1 overflow-hidden">
+          <section className="flex-1 overflow-y-auto px-4 sm:px-6 py-6 sm:py-8 lg:px-10">
             <div className="max-w-3xl space-y-6">
+              {/* Mobile evidence toggle */}
+              <button
+                onClick={() => setShowMobileEvidence(!showMobileEvidence)}
+                className="lg:hidden flex items-center gap-2 w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-4 py-3 text-sm font-semibold text-slate-700 dark:text-slate-300"
+              >
+                <span className="material-symbols-outlined text-lg">folder_data</span>
+                Supporting Evidence ({selectedEvidenceIds.length}/{savedEvidence.length})
+                <span className="material-symbols-outlined ml-auto text-lg">{showMobileEvidence ? "expand_less" : "expand_more"}</span>
+              </button>
               <div>
                 <h1 className="text-3xl font-bold text-slate-900 dark:text-white tracking-tight mb-2">Submit Your Findings</h1>
                 <p className="text-slate-600 dark:text-slate-400">
@@ -240,7 +250,7 @@ export default function CompletionPage() {
             </div>
           </section>
 
-          <aside className="w-[420px] border-l border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 overflow-y-auto">
+          <aside className={`lg:w-[420px] border-l-0 lg:border-l border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 overflow-y-auto ${showMobileEvidence ? "block border-t lg:border-t-0" : "hidden lg:block"}`}>
             <div className="px-5 py-4 border-b border-slate-200 dark:border-slate-800">
               <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-100">Supporting Evidence</h3>
               <p className="text-xs text-slate-500 mt-1">Select the saved findings that support your root cause.</p>

@@ -159,7 +159,7 @@ export default function ScenariosPage() {
               <span className="material-symbols-outlined text-sm">workspace_premium</span>
               Simulation Scenarios
             </div>
-            <h2 className="text-slate-900 dark:text-white text-4xl md:text-5xl font-black leading-tight tracking-tight mb-2">
+            <h2 className="text-slate-900 dark:text-white text-2xl sm:text-3xl md:text-4xl lg:text-5xl font-black leading-tight tracking-tight mb-2">
               Choose Your <span className="text-[#10B981]">Scenario</span>
             </h2>
             <p className="text-slate-500 dark:text-slate-400 text-lg max-w-2xl">

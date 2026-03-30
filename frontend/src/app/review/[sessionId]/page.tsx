@@ -320,7 +320,7 @@ export default function ReviewPage() {
         )}
       </header>
 
-      <main className="flex-1 overflow-y-auto px-6 py-8 lg:px-10">
+      <main className="flex-1 overflow-y-auto px-4 sm:px-6 py-6 sm:py-8 lg:px-10">
         <div className="max-w-6xl mx-auto space-y-8">
           {!scoring && (
             <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/50 p-8 text-center">
@@ -352,11 +352,11 @@ export default function ReviewPage() {
 
           {scoring && report && submission && scenario && (
             <>
-              <section className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/50 p-8">
+              <section className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/50 p-4 sm:p-6 lg:p-8">
                 <div className="flex flex-col gap-8 lg:flex-row lg:items-start lg:justify-between">
                   <div className="max-w-3xl">
                     <p className="text-xs font-bold uppercase tracking-widest text-[#10B981] mb-3">Hiring Manager Summary</p>
-                    <h1 className="text-3xl lg:text-4xl font-black tracking-tight text-slate-900 dark:text-white">
+                    <h1 className="text-2xl sm:text-3xl lg:text-4xl font-black tracking-tight text-slate-900 dark:text-white">
                       {report.scenarioTitle}
                     </h1>
                     <p className="mt-3 text-sm text-slate-500">

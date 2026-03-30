@@ -203,7 +203,7 @@ export default function DashboardPage() {
         </button>
       </nav>
 
-      <div className="max-w-5xl mx-auto px-6 py-10">
+      <div className="max-w-5xl mx-auto px-4 sm:px-6 py-6 sm:py-10">
         {notice === "candidate-access-company" && (
           <div className="mb-6 rounded-xl border border-sky-500/30 bg-sky-500/10 px-4 py-3 text-sm text-sky-200">
             Candidate Access is invite-first. Use Company Sign In for employer work, or open a candidate invite link if you need to enter an assessment as a participant.

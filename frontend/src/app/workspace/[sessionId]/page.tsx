@@ -94,12 +94,12 @@ function MissionCard({ title, problem, onOpen }: { title: string; problem: strin
   return (
     <button
       onClick={onOpen}
-      className="flex items-center gap-3 px-5 py-2 rounded-lg bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 hover:border-emerald-500/50 transition-colors text-left"
+      className="flex items-center gap-2 sm:gap-3 px-3 sm:px-5 py-2 rounded-lg bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 hover:border-emerald-500/50 transition-colors text-left min-w-0 max-w-full"
     >
-      <span className={`material-symbols-outlined text-xl ${ACCENT_TEXT}`}>assignment</span>
-      <div className="flex flex-col">
-        <span className="text-sm font-bold text-slate-900 dark:text-slate-200">{title}</span>
-        <span className="text-[10px] text-slate-500 font-medium truncate max-w-[440px]">
+      <span className={`material-symbols-outlined text-xl ${ACCENT_TEXT} shrink-0`}>assignment</span>
+      <div className="flex flex-col min-w-0">
+        <span className="text-xs sm:text-sm font-bold text-slate-900 dark:text-slate-200 truncate">{title}</span>
+        <span className="text-[10px] text-slate-500 font-medium truncate hidden sm:block">
           {problem} <span className="text-emerald-500/80">open brief & sources</span>
         </span>
       </div>
@@ -1489,6 +1489,7 @@ export default function WorkspacePage() {
   const [evidenceTypeFilter, setEvidenceTypeFilter] = useState<string>("all");
   const [evidenceOrder, setEvidenceOrder] = useState<number[]>([]);
   const [dragOverId, setDragOverId] = useState<number | null>(null);
+  const [mobileTab, setMobileTab] = useState<"chat" | "evidence" | "team">("chat");
   const chatEndRef = useRef<HTMLDivElement>(null);
   const evidenceEndRef = useRef<HTMLDivElement>(null);
 
@@ -1704,12 +1705,12 @@ export default function WorkspacePage() {
         />
       )}
 
-      <header className="flex items-center border-b border-slate-200 dark:border-slate-800 px-5 py-2 bg-white dark:bg-slate-900 shrink-0">
-        <Link href="/candidate" className="flex items-center gap-3 shrink-0 hover:opacity-80 transition-opacity">
+      <header className="flex items-center border-b border-slate-200 dark:border-slate-800 px-3 lg:px-5 py-2 bg-white dark:bg-slate-900 shrink-0 gap-2">
+        <Link href="/candidate" className="flex items-center gap-2 lg:gap-3 shrink-0 hover:opacity-80 transition-opacity">
           <span className={`material-symbols-outlined text-2xl ${ACCENT_TEXT}`}>cognition</span>
-          <h2 className="text-base font-bold tracking-tight text-slate-900 dark:text-white">SimWork</h2>
+          <h2 className="hidden sm:block text-base font-bold tracking-tight text-slate-900 dark:text-white">SimWork</h2>
         </Link>
-        <div className="flex-1 flex justify-center">
+        <div className="flex-1 flex justify-center min-w-0">
           <MissionCard
             title={scenarioDetail?.title || "Simulation"}
             problem={scenarioDetail?.problem_statement || "Investigate the issue and propose a recovery plan."}
@@ -1720,31 +1721,32 @@ export default function WorkspacePage() {
             }}
           />
         </div>
-        <div className="flex items-center gap-3 shrink-0">
+        <div className="flex items-center gap-1.5 sm:gap-3 shrink-0">
           <button
             onClick={() => {
               setReferenceTab("sources");
               setReferenceOpen(true);
               logUiEvent("reference_opened", { tab: "sources" });
             }}
-            className="rounded-lg h-9 px-4 bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs font-semibold text-slate-700 dark:text-slate-300"
+            className="hidden sm:block rounded-lg h-9 px-4 bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs font-semibold text-slate-700 dark:text-slate-300"
           >
             Sources
           </button>
-          <div className="flex flex-col items-center px-4 py-1 rounded-lg bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-800 min-w-[80px]">
-            <span className="text-[9px] uppercase tracking-widest text-slate-500 font-semibold">Time Left</span>
-            <span className={`text-sm font-mono font-bold ${ACCENT_TEXT}`}>{timeLeft}</span>
+          <div className="flex flex-col items-center px-2 sm:px-4 py-1 rounded-lg bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-800 min-w-[60px] sm:min-w-[80px]">
+            <span className="hidden sm:block text-[9px] uppercase tracking-widest text-slate-500 font-semibold">Time Left</span>
+            <span className={`text-xs sm:text-sm font-mono font-bold ${ACCENT_TEXT}`}>{timeLeft}</span>
           </div>
           <button
             onClick={() => router.push(`/complete/${sessionId}`)}
-            className="rounded-lg h-9 px-4 bg-red-500/90 hover:bg-red-500 text-white text-xs font-bold transition-colors"
+            className="rounded-lg h-9 px-2.5 sm:px-4 bg-red-500/90 hover:bg-red-500 text-white text-xs font-bold transition-colors"
           >
-            End Interview
+            <span className="hidden sm:inline">End Interview</span>
+            <span className="sm:hidden material-symbols-outlined text-base">stop_circle</span>
           </button>
-          <div className="h-5 w-px bg-slate-300 dark:bg-slate-700" />
+          <div className="hidden sm:block h-5 w-px bg-slate-300 dark:bg-slate-700" />
           <button
             onClick={() => signOut({ callbackUrl: "/" })}
-            className="flex items-center justify-center rounded-lg size-9 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+            className="hidden sm:flex items-center justify-center rounded-lg size-9 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
             title="Sign out"
           >
             <span className="material-symbols-outlined text-lg">logout</span>
@@ -1752,8 +1754,8 @@ export default function WorkspacePage() {
         </div>
       </header>
 
-      <main className="flex flex-1 overflow-hidden">
-        <aside className="w-72 flex flex-col border-r border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 overflow-hidden shrink-0">
+      <main className="flex flex-1 overflow-hidden relative">
+        <aside className={`w-72 flex-col border-r border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 overflow-hidden shrink-0 hidden lg:flex ${mobileTab === "team" ? "!flex absolute inset-0 z-10 w-full lg:relative lg:w-72" : ""}`}>
           <div className="flex items-center gap-2 px-4 py-3 border-b border-slate-200 dark:border-slate-800">
             <span className={`material-symbols-outlined text-lg ${ACCENT_TEXT}`}>groups</span>
             <h3 className="text-[10px] font-bold uppercase tracking-widest text-slate-500">Team Panel</h3>
@@ -1833,7 +1835,24 @@ export default function WorkspacePage() {
           </div>
         </aside>
 
-        <section className="flex flex-col overflow-hidden bg-[#f6f6f8] dark:bg-[#101122]" style={{ flex: "0 0 52%" }}>
+        <section className={`flex-col overflow-hidden bg-[#f6f6f8] dark:bg-[#101122] flex-1 lg:flex-none lg:basis-[52%] lg:grow-0 lg:shrink-0 ${mobileTab === "chat" ? "flex" : "hidden lg:flex"}`}>
+          {/* Mobile agent selector — visible when team panel is hidden */}
+          <div className="lg:hidden flex gap-1.5 px-3 py-2 border-b border-slate-200 dark:border-slate-800 bg-white/50 dark:bg-slate-900/50 overflow-x-auto">
+            {AGENTS.map((agent) => (
+              <button
+                key={agent.id}
+                onClick={() => { setSelectedAgent(agent.id); logUiEvent("agent_selected", { agent: agent.id }); }}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[11px] font-semibold whitespace-nowrap transition-colors ${
+                  selectedAgent === agent.id
+                    ? "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30"
+                    : "bg-slate-100 dark:bg-slate-800 text-slate-500 border border-transparent hover:text-slate-700 dark:hover:text-slate-300"
+                }`}
+              >
+                <AgentIcon agent={agent.id} size="sm" />
+                {agent.label}
+              </button>
+            ))}
+          </div>
           <div className="px-4 py-2.5 border-b border-slate-200 dark:border-slate-800 flex justify-between items-center bg-white/50 dark:bg-slate-900/50">
             <h3 className="text-sm font-semibold flex items-center gap-2 text-slate-700 dark:text-slate-300">
               <span className={`material-symbols-outlined ${ACCENT_TEXT}`}>forum</span>
@@ -2002,7 +2021,7 @@ export default function WorkspacePage() {
           </div>
         </section>
 
-        <aside className="flex-1 flex flex-col border-l border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 overflow-y-auto">
+        <aside className={`flex-1 flex-col border-l border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 overflow-y-auto ${mobileTab === "evidence" ? "flex" : "hidden lg:flex"}`}>
           {/* Evidence Board header */}
           <div className="flex items-center gap-2 px-4 py-2.5 border-b border-slate-200 dark:border-slate-800">
             <span className={`material-symbols-outlined text-lg ${ACCENT_TEXT}`}>folder_data</span>
@@ -2150,6 +2169,28 @@ export default function WorkspacePage() {
           </div>
         </aside>
       </main>
+
+      {/* Mobile bottom tab bar */}
+      <nav className="lg:hidden flex border-t border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shrink-0">
+        {([
+          { id: "chat" as const, icon: "forum", label: "Chat" },
+          { id: "evidence" as const, icon: "folder_data", label: `Evidence${savedEvidence.length > 0 ? ` (${savedEvidence.length})` : ""}` },
+          { id: "team" as const, icon: "groups", label: "Team" },
+        ]).map((tab) => (
+          <button
+            key={tab.id}
+            onClick={() => setMobileTab(tab.id)}
+            className={`flex-1 flex flex-col items-center gap-0.5 py-2.5 text-[10px] font-semibold transition-colors ${
+              mobileTab === tab.id
+                ? `${ACCENT_TEXT} border-t-2 border-emerald-500 -mt-px`
+                : "text-slate-400 hover:text-slate-600 dark:hover:text-slate-300"
+            }`}
+          >
+            <span className="material-symbols-outlined text-lg">{tab.icon}</span>
+            {tab.label}
+          </button>
+        ))}
+      </nav>
     </div>
   );
 }

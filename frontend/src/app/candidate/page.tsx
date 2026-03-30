@@ -124,13 +124,13 @@ export default function CandidateHomePage() {
             <span className="material-symbols-outlined text-sm">pending_actions</span>
             Candidate Workspace
           </div>
-          <h1 className="text-4xl font-black tracking-tight mb-3">Your assessments</h1>
-          <p className="text-slate-400 text-lg leading-relaxed">
+          <h1 className="text-2xl sm:text-3xl lg:text-4xl font-black tracking-tight mb-3">Your assessments</h1>
+          <p className="text-slate-400 text-sm sm:text-lg leading-relaxed">
             Continue any assigned simulation, or enter a new invite link from your hiring team.
           </p>
         </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-[1.2fr_0.8fr] gap-8 items-start">
+        <div className="grid grid-cols-1 md:grid-cols-[1.2fr_0.8fr] gap-6 sm:gap-8 items-start">
           <section className="rounded-2xl border border-slate-800 bg-slate-900/30 p-6">
             <div className="flex items-center justify-between mb-5">
               <h2 className="text-xl font-bold">Assigned assessments</h2>
